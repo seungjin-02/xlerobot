@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+build/
+install/
+log/
+.local/
+private/
+recordings/
+lekiwi-recordings/
+datasets/
+*.key
+*.pem
+config.json
+wifi-install.json
+connection-card/

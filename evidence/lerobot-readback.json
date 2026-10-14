@@ -1,0 +1,16 @@
+{
+  "episodes": 1,
+  "frames": 77,
+  "action_shape": [
+    3
+  ],
+  "state_shape": [
+    6
+  ],
+  "image_shape": [
+    3,
+    480,
+    640
+  ],
+  "synthetic_verification": true
+}

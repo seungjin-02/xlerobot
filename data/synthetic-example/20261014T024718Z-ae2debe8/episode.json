@@ -1,0 +1,33 @@
+{
+  "format": "lekiwi-episode-v1",
+  "episode_id": "20261014T024718Z-ae2debe8",
+  "task": "Simulation only: dataset conversion verification",
+  "fps": 20,
+  "started_monotonic_ns": 4413700640432,
+  "started_wall_ns": 1791946038244767943,
+  "device_profile": {
+    "demo": true,
+    "robot_name": "LeKiwi",
+    "camera_source": "0",
+    "camera_rotation": 0
+  },
+  "outcome": "success",
+  "complete": true,
+  "state_names": [
+    "x_m",
+    "y_m",
+    "yaw_rad",
+    "vx_m_s",
+    "vy_m_s",
+    "yaw_rate_rad_s"
+  ],
+  "action_names": [
+    "vx_m_s",
+    "vy_m_s",
+    "yaw_rate_rad_s"
+  ],
+  "ended_monotonic_ns": 4417627233625,
+  "samples": 77,
+  "valid_samples": 77,
+  "error": null
+}

@@ -1,0 +1,74 @@
+{
+  "installed": true,
+  "controller_status": {
+    "available": false,
+    "motor_ready": null,
+    "other_publishers": 0,
+    "demo": false,
+    "max_linear": 0.9,
+    "max_angular": 4.5,
+    "wheel_output_limit_note": "바퀴 출력 상한을 유지합니다. 명령값과 실제 주행 속도는 다를 수 있습니다.",
+    "base_running": false,
+    "armed": false,
+    "mine": false,
+    "reason": "조종 중지 상태",
+    "cleanup_error": null,
+    "motion": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "requested_motion": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "output_motion": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "reconnecting": false,
+    "watchdog_ms": 10000,
+    "max_hold_seconds": null,
+    "server_time": 1791949698888.2986,
+    "fault": null,
+    "device_name": "lekiwi01",
+    "recording": {
+      "active": false,
+      "finishing": false,
+      "mine": false,
+      "episode_id": null,
+      "samples": 0,
+      "valid_samples": 0,
+      "error": null,
+      "camera_error": null,
+      "last_episode": null,
+      "fps": 20
+    },
+    "episodes": []
+  },
+  "timestamped_camera_verified": true,
+  "motor_activation_tested": false,
+  "real_demonstration_recorded": false,
+  "python_tests_passed": 47,
+  "driver_tests_passed": 190,
+  "lerobot_conversion": {
+    "episodes": 1,
+    "frames": 77,
+    "action_shape": [
+      3
+    ],
+    "state_shape": [
+      6
+    ],
+    "image_shape": [
+      3,
+      480,
+      640
+    ],
+    "synthetic_verification": true
+  },
+  "new_robot_tested": false,
+  "fresh_os_install_tested": false
+}

@@ -1,0 +1,13 @@
+{
+  "snapshot": "2026-10-14",
+  "robot_os": "Ubuntu 24.04 ARM64",
+  "ros": "Jazzy",
+  "export_python": "3.12",
+  "lerobot": "0.6.0",
+  "torch": "2.10.0+cu128",
+  "numpy": "2.2.6",
+  "datasets": "4.8.5",
+  "Pillow": "12.3.0",
+  "pyarrow": "26.0.0",
+  "note": "Observed environment, not a full dependency lock"
+}

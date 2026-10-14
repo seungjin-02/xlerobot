@@ -1,0 +1,1 @@
+synthetic-example contains a77-frame simulation used for HTTP/export verification, not physical robot training data. No real driving recordings are included. Read docs/DATA.md before export or adding real datasets. Use private external storage for real recordings.

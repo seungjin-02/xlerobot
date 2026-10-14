@@ -1,0 +1,34 @@
+# Example only. Confirm wheel order/directions and dimensions on each robot.
+lekiwi_node:
+  ros__parameters:
+    wheel_radius: 0.05
+    base_radius: 0.125
+    wheel_ids: [7, 8, 9]
+    wheel_directions: [1.0, 1.0, 1.0]
+    serial_port: AUTO
+    baud_rate: 1000000
+    speed_tick_scale: 651.8986469044033
+    speed_tick_limit: 1500
+    max_wheel_speed: 2.3009711818284617
+    max_linear_x: 0.03
+    max_linear_y: 0.03
+    max_linear_speed: 0.03
+    max_angular_z: 0.1
+    motor_backend: feetech
+    enable_motor_write: true
+    torque_enable: false
+    cmd_vel_timeout: 0.3
+    odom_source: encoder
+    encoder_feedback_source: position
+    encoder_read_period: 0.1
+    encoder_sample_timeout: 0.5
+    encoder_position_ticks_per_revolution: 4096.0
+    encoder_odom_scale: 1.0
+    encoder_position_tick_deadband: 0
+    encoder_tick_deadband: 50
+    odom_frame: odom
+    base_frame: base_footprint
+    tf_time_offset: 0.0
+    kinematics_frame_x: 0.0
+    kinematics_frame_y: 0.0
+    kinematics_frame_yaw: 0.0
