@@ -31,6 +31,8 @@ async function checkReleases(){
    for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]>y[i]?-1:1;
    return 0;
   });
+  const seen=new Set();
+  releases=[...stable,...releases].filter(r=>{if(seen.has(r.commit))return false;seen.add(r.commit);return true;});
   $('release').replaceChildren(new Option('릴리스를 선택하세요',''),...releases.map(r=>new Option(`${r.tag} · ${r.commit.slice(0,8)}`,r.commit)));
   $('release').value=stable[0]?.commit||'';
   $('availability').textContent=stable.length?'검증된 새 버전 '+stable[0].tag+'을 적용할 수 있습니다.':releases.length?'시험 릴리스만 있습니다. 내용을 확인하고 직접 선택하세요.':'적용 가능한 검증된 새 버전이 없습니다. 미검증 main은 자동 설치하지 않습니다.';
@@ -44,7 +46,7 @@ async function poll(){
   const d=await request('status');busy=d.busy;
   $('status').textContent=`상태: ${d.phase}${busy?' · 진행 중':''}`;$('error').textContent=d.job_error||d.error||'';
   $('panel').hidden=false;$('login').hidden=true;render();
-  if(d.phase==='succeeded'&&d.commit!==completedCommit){completedCommit=d.commit;await checkReleases();}
+  if(d.phase==='succeeded'&&!busy&&!checking&&d.commit!==completedCommit){completedCommit=d.commit;await checkReleases();}
  }catch(e){$('error').textContent=e.message;}
 }
 $('login').addEventListener('submit',async e=>{
