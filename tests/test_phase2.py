@@ -42,6 +42,7 @@ class Robot:
     def idle(self):
         if self.armed: raise UpdateError('robot_not_idle')
         return {'armed':False}
+    def application_idle(self): return self.idle()
     def service(self,verb): self.calls.append(verb)
     def health(self,sha):
         self.calls.append('health:'+sha)
@@ -60,6 +61,22 @@ class TransactionTests(unittest.TestCase):
         self.before={k:manifest(p) for k,p in self.paths.items()}
 
     def apply(self): self.engine.update('v2.0.0',NEW,True)
+
+    def test_app_disabled_update_without_physical_isolation(self):
+        self.engine.update('v2.0.0',NEW,False,True)
+        self.assertEqual(self.engine.state['phase'],'succeeded')
+        self.assertFalse((self.root/'maintenance.json').exists())
+
+    def test_app_disabled_state_rechecked_after_network_preparation(self):
+        original=self.source.refresh
+        def refresh():
+            original()
+            self.robot.armed=True
+        self.source.refresh=refresh
+        with self.assertRaises(UpdateError):
+            self.engine.update('v2.0.0',NEW,False,True)
+        self.assertEqual(self.robot.calls,[])
+        self.assertEqual(self.engine.baseline(),OLD)
 
     def test_success_snapshot_preservation_atomic_switch_and_unlock(self):
         self.apply()
@@ -164,6 +181,18 @@ class ManagedGateTests(unittest.TestCase):
         robot=Runtime('/not/read')
         for value in ({},{'armed':False,'motor_ready':0,'other_publishers':0,'available':True,'recording':{'active':False,'finishing':False}}):
             with patch.object(robot,'get',return_value=value),self.assertRaises(UpdateError):robot.idle()
+
+class ApplicationMaintenanceTests(unittest.TestCase):
+    def test_app_motor_idle_requires_explicit_no_base_process(self):
+        runtime=Runtime('/unused')
+        value={'armed':False,'available':False,'motor_ready':None,'other_publishers':0,
+            'recording':{'active':False,'finishing':False},'base_running':False}
+        with patch.object(runtime,'get',return_value=value):
+            self.assertEqual(runtime.application_idle(),value)
+        for field,invalid in [('base_running',True),('base_running',None),('armed',True),
+                ('motor_ready',True),('other_publishers',1)]:
+            with self.subTest(field=field,invalid=invalid),patch.object(runtime,'get',return_value={**value,field:invalid}):
+                with self.assertRaises(UpdateError):runtime.application_idle()
 
 class AdminTests(unittest.TestCase):
     def setUp(self):

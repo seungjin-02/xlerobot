@@ -127,11 +127,11 @@ class Handler(BaseHTTPRequestHandler):
                 try: result=admin.engine.sources.list(admin.engine.baseline())
                 finally: admin.engine.mutex.release()
                 return self.reply(200,{'releases':result})
-            if self.path=='/api/apply' and set(data)=={'tag','commit','motor_power_isolated'}:
-                admin.launch(admin.engine.update,data['tag'],data['commit'],data['motor_power_isolated'])
+            if self.path=='/api/apply' and set(data) in ({'tag','commit','motor_power_isolated'}, {'tag','commit','app_motors_disabled'}):
+                admin.launch(admin.engine.update,data['tag'],data['commit'],data.get('motor_power_isolated',False),data.get('app_motors_disabled',False))
                 return self.reply(202,{'accepted':True})
-            if self.path=='/api/confirm-recovery' and set(data)=={'motor_power_isolated'}:
-                admin.launch(admin.engine.confirm_recovery,data['motor_power_isolated'])
+            if self.path=='/api/confirm-recovery' and set(data) in ({'motor_power_isolated'}, {'app_motors_disabled'}):
+                admin.launch(admin.engine.confirm_recovery,data.get('motor_power_isolated',False),data.get('app_motors_disabled',False))
                 return self.reply(202,{'accepted':True})
             return self.reply(404,{'error':'not_found'})
         except (ValueError,TypeError,UpdateError) as error:

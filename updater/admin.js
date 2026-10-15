@@ -61,11 +61,11 @@ $('release').onchange=render;$('isolated').onchange=render;
 $('apply').onclick=async()=>{
  const r=releases.find(r=>r.commit===$('release').value);if(!r||!$('isolated').checked||busy||checking)return;
  busy=true;render();
- try{await request('apply',{tag:r.tag,commit:r.commit,motor_power_isolated:true});$('isolated').checked=false;await poll();}
+ try{await request('apply',{tag:r.tag,commit:r.commit,app_motors_disabled:true});$('isolated').checked=false;await poll();}
  catch(e){busy=false;$('error').textContent=e.message;render();}
 };
 $('recover').onclick=async()=>{
- if(!confirm('이전 버전으로 복원된 서비스 상태를 확인한 뒤 조종 잠금을 해제합니다. 모터 전원이 분리돼 있나요?'))return;
- try{await request('confirm-recovery',{motor_power_isolated:$('isolated').checked});await poll();}catch(e){$('error').textContent=e.message;}
+ if(!confirm('이전 버전으로 복원된 서비스 상태를 확인한 뒤 조종 잠금을 해제합니다. 앱에서 모터 활성화·조종이 종료됐나요?'))return;
+ try{await request('confirm-recovery',{app_motors_disabled:$('isolated').checked});await poll();}catch(e){$('error').textContent=e.message;}
 };
 poll().then(async()=>{if(!$('panel').hidden){await checkReleases();timer=setInterval(poll,2000);}});
