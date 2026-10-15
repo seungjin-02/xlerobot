@@ -16,6 +16,11 @@ class UpdateError(Exception):
     pass
 
 
+def valid_admin_password(value):
+    return isinstance(value, str) and (16 <= len(value) <= 256 or
+        len(value) == 6 and value.isascii() and value.isdecimal())
+
+
 def atomic_json(path, value, mode=0o600):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
