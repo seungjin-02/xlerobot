@@ -19,22 +19,23 @@ async function api(path, body, timeout = 1500, keepalive = false) {
   } finally { clearTimeout(timer); }
 }
 function render() {
-  const mine = !!lease;
+  const mine = !!lease, maintenance = !!status?.updates?.blocked;
   if(status?.device_name)document.querySelector('.brand strong').textContent=status.device_name;
   controls.forEach(b => {
-    b.disabled = !mine || arming || stopping || navigating;
+    b.disabled = maintenance || !mine || arming || stopping || navigating;
     const selected = mine && b.dataset.dir === direction;
     b.classList.toggle('pressed', selected);
     b.setAttribute('aria-pressed', String(selected));
   });
-  $('arm').disabled = mine || !!status?.armed || stopping || preparing || arming || disconnected || document.hidden;
+  $('arm').disabled = maintenance || mine || !!status?.armed || stopping || preparing || arming || disconnected || document.hidden;
   $('arm').textContent = arming ? '준비 중…' : mine ? '조종 중' : '조종 시작';
   $('prepareBox').hidden = !status || status.demo || status.max_linear >= .89;
-  $('prepare').disabled = preparing || !!status?.armed || !!status?.motor_ready || !!status?.other_publishers;
+  $('prepare').disabled = maintenance || preparing || !!status?.armed || !!status?.motor_ready || !!status?.other_publishers;
   $('prepare').textContent = preparing ? '고속 설정 준비 중…' : '폰 조종 고속 설정 적용';
   $('badge').textContent = disconnected ? '재연결 중' : status?.demo ? '시뮬레이션' : mine ? '조종 중' : status ? '연결됨' : '접속 대기';
   $('badge').classList.toggle('on', mine && !disconnected);
   $('controlSummary').textContent = `${status?.demo ? '합성 데모 · 실물 연결 없음' : '로컬 로봇'} · ${status && !disconnected ? 'PIN 인증됨' : '연결 확인 필요'} · ${disconnected ? '재연결 중' : mine ? '내 제어권' : status?.armed ? '다른 기기 조종 중' : '조종 중지'} · ${status?.recording?.active ? '기록 중' : '기록 대기'}`;
+  if(maintenance)$('controlSummary').textContent+=' · 업데이트/복구 검증 중 · 조종·기록 차단';
   $('motorState').textContent = `${status?.demo ? '시뮬레이션 · ' : ''}모터 준비 피드백: ${!status?.available ? '확인 불가' : status.motor_ready === true ? '준비됨' : status.motor_ready === false ? '비활성' : '확인 불가'} · 제어 연결: ${status?.available ? '응답 있음' : '확인 불가'}`;
   document.querySelectorAll('[data-screen]').forEach(button => {
     button.disabled = navigating || arming || preparing || stopping || recordBusy;
@@ -52,7 +53,7 @@ function render() {
   document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('selected', Number(b.dataset.speed) === Math.round(speed * 30)));
   renderCameras();
   const rec=status?.recording;
-  $('recordStart').disabled=!lease || recordBusy || !!rec?.active || !!rec?.finishing;
+  $('recordStart').disabled=maintenance || !lease || recordBusy || !!rec?.active || !!rec?.finishing;
   $('task').disabled=!!rec?.active || !!rec?.finishing;
   $('recordBadge').textContent=rec?.finishing?'저장 중':rec?.active?'기록 중':'대기';
   $('recordFinish').hidden=!rec?.active || !rec?.mine;
@@ -265,6 +266,8 @@ async function refreshSystem() {
       const term = document.createElement('dt'), description = document.createElement('dd');
       term.textContent = label; description.textContent = known(value); $('systemInfo').append(term, description);
     }
+    const update=data.updates;
+    $('updateState').textContent=update?.enabled ? `${update.blocked ? '조종·기록 차단 · ' : ''}${known(update.phase)}${update.error ? ' · '+update.error : ''}` : '관리자 업데이트 서비스가 아직 설치되지 않았습니다.';
     $('systemState').textContent = '마지막 조회 ' + new Date().toLocaleTimeString() + ' · 설치 정보 최대 5초 캐시';
   } catch (error) {
     $('systemInfo').replaceChildren();

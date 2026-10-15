@@ -1,5 +1,7 @@
 """Bounded, read-only diagnostics. Never execute client-supplied commands."""
 import os
+import json
+import re
 import platform
 import shutil
 import subprocess
@@ -17,6 +19,13 @@ def output(argv, cwd=None):
 
 
 def git_version(root):
+    if os.environ.get('LEKIWI_MANAGED_UPDATES') == '1':
+        try:
+            value = json.loads((Path(root)/'.lekiwi-release.json').read_text())
+            if not re.fullmatch(r'[0-9a-f]{40}', value['commit']): raise ValueError()
+            return {'commit':value['commit'], 'tag':value.get('tag'), 'modified':None, 'managed':True}
+        except (OSError, ValueError, KeyError, TypeError):
+            return {'commit':None, 'tag':None, 'modified':None, 'managed':True}
     commit = output(['git', 'rev-parse', '--verify', 'HEAD^{commit}'], root)
     tag = output(['git', 'describe', '--tags', '--exact-match', 'HEAD'], root)
     dirty = output(['git', 'status', '--porcelain', '--untracked-files=no'], root)

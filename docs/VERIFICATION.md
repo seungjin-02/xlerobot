@@ -1,5 +1,9 @@
 # 검증 범위
 
+## Phase 2 검토 브랜치
+
+신규 구현·시험별 실제/모의 구분과 실물 미검증 범위는 [PHASE2.md](PHASE2.md)에 기록합니다. Phase 2는 실물 장비 미적용이며 운영 릴리스 검증 완료 기록을 만들지 않습니다.
+
 ## 개발 지시서 전체 대조·보완 — 2026-10-15 Ubuntu 노트북
 
 요구사항별 구현/충돌/미완료 범위는 [REQUIREMENTS.md](REQUIREMENTS.md), 현재 공개 출처·포털·운영 태그 기준은 [PUBLICATION.md](PUBLICATION.md)를 따릅니다.
