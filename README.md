@@ -15,7 +15,7 @@ Phase 1에서 세 화면 UI, Git 태그/커밋 표시, SSH/Git 최초 설치 도
 5. 문제 발생: [문제 해결·복구](docs/TROUBLESHOOTING.md).
 6. 검증·버전: [검증 범위](docs/VERIFICATION.md), [구조](docs/ARCHITECTURE.md), `evidence/`.
 7. 기존 설치 업데이트: [태그 검증·백업·설치 재실행·복구](docs/UPDATE.md).
-8. [공개 설치 안내](https://lekiwi-control-center-install.psj22037540.chatgpt.site) · 공개 포털 소스: `site/`와 수동 GitHub Pages workflow. Sites에 정적 게시하며 GitHub Pages workflow도 유지합니다.
+8. [공개 설치 안내](https://lekiwi.psj22037540.chatgpt.site) · 공개 포털 소스: `site/`와 수동 GitHub Pages workflow. Sites에 정적 게시하며 GitHub Pages workflow도 유지합니다.
 
 ## 빠른 설치 — 로봇에서 실행
 

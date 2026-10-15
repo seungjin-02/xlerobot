@@ -144,6 +144,11 @@ async function main() {
       const portalPage=await browser.newPage({viewport:{width:1280,height:900}});
       await portalPage.goto(portalBase);
       assert.equal((await portalPage.locator('h1').innerText()).includes('기록하세요'),true);
+      const qr=portalPage.locator('.qr-card img');
+      await qr.waitFor({state:'visible'});
+      await portalPage.waitForFunction(()=>document.querySelector('.qr-card img').naturalWidth>0);
+      assert.equal(await portalPage.locator('.qr-card a').first().getAttribute('href'),'http://192.168.4.1:8090');
+      assert.equal(await qr.getAttribute('src'),'webapp-qr.svg');
       await portalPage.screenshot({path:path.join(artifacts,'portal-desktop.png'),fullPage:true});
       await portalPage.setViewportSize({width:390,height:844});
       assert.equal(await portalPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);

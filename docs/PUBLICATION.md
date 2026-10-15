@@ -12,7 +12,7 @@
 
 원본은 `site/`의 buildless HTML/CSS입니다. 조종 API·장비 인증 정보·기록 데이터를 포함하지 않습니다. 설치 포털과 로봇의 `http://192.168.4.1:8090` 로컬 앱은 별개입니다.
 
-공개 설치 포털: https://lekiwi-control-center-install.psj22037540.chatgpt.site
+공개 설치 포털: https://lekiwi.psj22037540.chatgpt.site
 
 호스팅은 Sites이며 GitHub의 `site/` 파일을 정적 배포합니다. GitHub Pages는 아직 활성화하지 않았습니다. Pages로 이전하려면 저장소 Settings → Pages에서 GitHub Actions를 선택하고 `.github/workflows/pages.yml`을 수동 실행합니다. 다른 호스팅으로 옮겨도 로봇 앱·PC 도우미·Git 배포 출처는 변경할 필요가 없습니다.
 
