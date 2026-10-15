@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 from core import Controller, ControlError, DemoBackend
+from system_info import SystemInfo, storage_info
 
 ROOT = Path(__file__).resolve().parent
 
@@ -43,6 +44,7 @@ class App:
         self.recorder = EpisodeRecorder(config.get('recordings', str(Path.home()/'lekiwi-recordings')),
                                         profile,
                                         feed=DemoCameraFeed() if isinstance(backend,DemoBackend) else None)
+        self.system_info = SystemInfo(ROOT.parent, self.recorder.root, isinstance(backend, DemoBackend))
 
     def record_sample(self):
         if not self.recorder.active: return
@@ -133,6 +135,19 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == '/health':
             return self.response(200, {'ok': True, 'demo': isinstance(self.app.control.backend, DemoBackend)})
+        if path == '/api/system':
+            owner = self.session()
+            if not owner: return self.response(401, {'error': '접속 코드를 입력하세요'})
+            return self.response(200, self.app.system_info.snapshot(
+                self.app.control.status(owner), self.app.device_name, self.app.fault))
+        if path == '/api/camera/demo.jpg':
+            if not self.session(): return self.response(401, {'error': '접속 코드를 입력하세요'})
+            if not isinstance(self.app.control.backend, DemoBackend):
+                return self.response(404, {'error': '데모 전용 영상입니다'})
+            body = self.app.recorder.feed.frame['jpeg']
+            self.send_response(200); self.headers_common('image/jpeg', len(body))
+            self.end_headers(); self.wfile.write(body)
+            return
         if path == '/api/status':
             owner = self.session()
             if not owner: return self.response(401, {'error': '접속 코드를 입력하세요'})
@@ -144,8 +159,10 @@ class Handler(BaseHTTPRequestHandler):
                 with urllib.request.urlopen('http://127.0.0.1:8080/api/cameras',timeout=.3) as response:
                     camera_health={c['role']:c['connected'] for c in json.load(response)}
             except (OSError,ValueError): camera_health={}
-            data['cameras'] = [{'role':c['role'],'index':i,'connected':camera_health.get(c['role'],False)} for i,c in enumerate(self.app.cameras)]
+            demo = isinstance(self.app.control.backend, DemoBackend)
+            data['cameras'] = [{'role':c['role'],'index':i,'connected':demo or camera_health.get(c['role'],False), 'simulated':demo} for i,c in enumerate(self.app.cameras)]
             data['recording'] = self.app.recorder.status(owner)
+            data['storage'] = storage_info(self.app.recorder.root)
             data['episodes'] = self.app.episodes()
             return self.response(200, data)
         match = re.fullmatch(r'/api/record/([0-9]{8}T[0-9]{6}Z-[a-f0-9]{8})/download',path)

@@ -161,7 +161,8 @@ class EpisodeRecorder:
     def status(self, owner=None):
         return {'active':self.active,'finishing':self.finishing,'mine':bool(self.owner) and self.owner==owner,
                 'episode_id':self.episode_id,'samples':self.samples,'valid_samples':self.valid_samples,
-                'error':self.error,'camera_error':self.feed.error,'last_episode':self.last_episode,'fps':self.fps}
+                'error':self.error,'camera_error':self.feed.error,'last_episode':self.last_episode,'fps':self.fps,
+                'elapsed_s':max(0, (self.clock()-self.started_ns)/1e9) if self.active or self.finishing else 0}
     def close(self):
         if self.active or self.finishing: self.finish(None,'interrupted',force=True)
         self.feed.close()

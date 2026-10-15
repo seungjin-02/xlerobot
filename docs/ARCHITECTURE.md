@@ -1,5 +1,7 @@
 # 작동 구조와 동작 계약
 
+Control Center Phase 1의 포털·PC SSH 도우미·로컬 세 화면·시스템 API와 Phase 2 설계는 [CONTROL_CENTER.md](CONTROL_CENTER.md)를 참조하세요. 아래 ROS·제어·기록 경로는 유지합니다. 내부 메뉴 이동은 idle 명령 확인 후 기록·제어권을 유지하고, 브라우저 비활성화는 조종 종료를 요청합니다.
+
 폰 브라우저 → 로봇 AP(192.168.4.1) → Python HTTP 서버8090 → Controller → RosBackend → ROS_DOMAIN_ID42, localhost discovery → lekiwi_node → Feetech 모터.
 
 카메라 Python 서버8080은 USB 카메라를 MJPEG로 전송합니다. UI는 선택한 index를 표시하며 기록 스레드는 index0 본체 JPEG를 받습니다. 설치 서비스는 lekiwi-phone.service / lekiwi-camera.service이고 사용자 Linger로 부팅 시 시작합니다. 앱 부팅은 모터 활성화를 의미하지 않습니다. 조종 시작 후 바퀴 노드 준비와 모터 활성화 절차를 수행합니다.
