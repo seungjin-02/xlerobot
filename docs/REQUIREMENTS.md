@@ -15,7 +15,7 @@ Python ThreadingHTTPServer와 순수 HTML/CSS/JS, PIN 쿠키 세션, 단일 leas
 | 지시서 | 구현 및 근거 | 남은 범위 |
 | --- | --- | --- |
 | 1–3 프로젝트·분석·아키텍처 | 본 문서, CONTROL_CENTER.md, 기존 Python/ROS/정적 웹 재사용 | 팔 제어·학습·자율주행은 제외 |
-| 3A 공개 설치 포털 | `site/index.html`, `site/style.css`, 수동 Pages workflow | 게시 결과와 실제 URL은 PUBLICATION.md에서 확인 |
+| 3A 공개 설치 포털 | `site/index.html`, `site/style.css`, main 사이트 변경 자동 Pages workflow | 게시 결과와 실제 URL은 PUBLICATION.md에서 확인 |
 | 3B·6 PC 도우미 | `tools/install_assistant.py`, `tools/robot_install.py`, 단계/오류·SSH·환경/프로필·기존 설치 검사 | 실제 깨끗한 Pi 전체 설치 및 Windows/macOS 미검증 |
 | 3C·8 세 화면 | `app/index.html`, `app/app.js`, `app/style.css`, `app/system_info.py` | 폰 OS별 비활성화 실기기 시험 |
 | 4 Git 최초 설치 | `docs/GIT_INSTALL.md`, clone→태그/SHA 대조→기존 install.sh | 검증된 운영 태그 미등록. 임의 버전을 만들지 않음 |
