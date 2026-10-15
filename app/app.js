@@ -5,6 +5,7 @@ let speed = 10 / 30, status = null, offset = 0, pairing = false, stopping = fals
 let recordBusy=false;
 let preparing = false, arming = false, refreshing = false, disconnected = false;
 let generation = 0, pendingCommands = 0, bestRtt = Infinity;
+let currentScreen = 'drive', navigating = false, systemLoading = false;
 const controls = [...document.querySelectorAll('.drive')];
 function message(text = '') { $('message').textContent = text; }
 async function api(path, body, timeout = 1500, keepalive = false) {
@@ -21,18 +22,27 @@ function render() {
   const mine = !!lease;
   if(status?.device_name)document.querySelector('.brand strong').textContent=status.device_name;
   controls.forEach(b => {
-    b.disabled = !mine || arming || stopping;
+    b.disabled = !mine || arming || stopping || navigating;
     const selected = mine && b.dataset.dir === direction;
     b.classList.toggle('pressed', selected);
     b.setAttribute('aria-pressed', String(selected));
   });
-  $('arm').disabled = mine || !!status?.armed || stopping || preparing || arming || disconnected;
+  $('arm').disabled = mine || !!status?.armed || stopping || preparing || arming || disconnected || document.hidden;
   $('arm').textContent = arming ? '준비 중…' : mine ? '조종 중' : '조종 시작';
   $('prepareBox').hidden = !status || status.demo || status.max_linear >= .89;
   $('prepare').disabled = preparing || !!status?.armed || !!status?.motor_ready || !!status?.other_publishers;
   $('prepare').textContent = preparing ? '고속 설정 준비 중…' : '폰 조종 고속 설정 적용';
   $('badge').textContent = disconnected ? '재연결 중' : status?.demo ? '시뮬레이션' : mine ? '조종 중' : status ? '연결됨' : '접속 대기';
   $('badge').classList.toggle('on', mine && !disconnected);
+  $('controlSummary').textContent = `${status?.demo ? '합성 데모 · 실물 연결 없음' : '로컬 로봇'} · ${status && !disconnected ? 'PIN 인증됨' : '연결 확인 필요'} · ${disconnected ? '재연결 중' : mine ? '내 제어권' : status?.armed ? '다른 기기 조종 중' : '조종 중지'} · ${status?.recording?.active ? '기록 중' : '기록 대기'}`;
+  $('motorState').textContent = `${status?.demo ? '시뮬레이션 · ' : ''}모터 준비 피드백: ${!status?.available ? '확인 불가' : status.motor_ready === true ? '준비됨' : status.motor_ready === false ? '비활성' : '확인 불가'} · 제어 연결: ${status?.available ? '응답 있음' : '확인 불가'}`;
+  document.querySelectorAll('[data-screen]').forEach(button => {
+    button.disabled = navigating || arming || preparing || stopping || recordBusy;
+    if (button.closest('nav')) {
+      if (button.dataset.screen === currentScreen) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    }
+  });
   const names = {forward:'전진',back:'후진',left:'왼쪽 이동',right:'오른쪽 이동',turn_left:'좌회전',turn_right:'우회전'};
   $('state').textContent = disconnected ? '재연결 중 · 마지막 이동은 최대 10초 유지됩니다' : mine && direction !== 'idle' ? `${names[direction]} 켜짐 · 같은 버튼을 다시 누르면 정지` : status?.armed && !status.mine ? '다른 폰에서 조종 중입니다' : status?.fault || (status?.other_publishers ? 'PC의 다른 조종 프로그램을 종료하세요' : status?.reason || '로봇 상태 확인 중');
   $('speedValue').textContent = Math.round(speed * 30) + '배';
@@ -48,6 +58,8 @@ function render() {
   $('recordFinish').hidden=!rec?.active || !rec?.mine;
   $('recordFinish').querySelectorAll('button').forEach(b=>b.disabled=recordBusy);
   $('recordState').textContent=rec?.error || rec?.camera_error || (rec?.active ? `${rec.samples}프레임 저장 · 학습에 쓸 수 있는 프레임 ${rec.valid_samples}개` : '조종 시작 후 기록할 수 있습니다. 기록 종료 버튼은 로봇도 정지시킵니다.');
+  $('recordDuration').textContent=rec?.active || rec?.finishing ? `기록 시간 ${Math.floor(rec.elapsed_s || 0)}초 · ${rec.fps} Hz 목표` : '요청 명령·출력 제한 후 발행 명령·센서 상태를 구분해 저장합니다.';
+  $('recordStorage').textContent=`남은 공간 ${bytes(status?.storage?.free_bytes)} · 시작 시 최소 256 MiB 필요`;
   const episodes=status?.episodes || [];
   const signature=JSON.stringify(episodes);
   if($('episodes').dataset.signature!==signature){
@@ -71,9 +83,10 @@ function lostLease(reason) {
 }
 async function stop(reason = '') {
   generation++; lease = null; clearDirection(); stopping = true; message(); render();
-  try { await api('stop', {}, 3500, true); }
+  let acknowledged = false;
+  try { await api('stop', {}, 3500, true); acknowledged = true; }
   catch { message('정지 명령이 전달되지 않았습니다. 연결 끊김 시 마지막 이동이 최대 10초 유지될 수 있습니다. 즉시 멈춰야 하면 전원을 차단하세요.'); }
-  finally { stopping = false; if (reason) message(reason); await refresh(); render(); }
+  finally { stopping = false; if (reason && acknowledged) message(reason); await refresh(); render(); }
 }
 async function sendCommand(urgent = false) {
   if (!lease || document.hidden || (!urgent && pendingCommands > 0) || pendingCommands >= 4) return;
@@ -81,7 +94,7 @@ async function sendCommand(urgent = false) {
   const currentLease = lease, sentSeq = ++seq, currentGeneration = generation;
   try {
     await api('command', {lease:currentLease, seq:sentSeq, direction, speed, hold, sent_at:Date.now() + offset}, 700);
-    if (lease === currentLease && generation === currentGeneration) { disconnected = false; render(); }
+    if (lease === currentLease && generation === currentGeneration) { disconnected = false; render(); return true; }
   } catch (e) {
     if (lease !== currentLease || generation !== currentGeneration || sentSeq < seq) return;
     if (e.status === 401) { lostLease('접속 코드를 다시 입력하세요.'); $('login').hidden=false; $('panel').hidden=true; }
@@ -115,10 +128,15 @@ $('pairForm').addEventListener('submit', async e => {
   catch(e) { message(e.message); } finally { pairing=false; }
 });
 $('arm').addEventListener('click', async () => {
-  if (arming || lease) return;
+  if (arming || lease || document.hidden) return;
   arming=true; generation++; message(); render();
+  const armGeneration = generation;
   try {
     const data=await api('arm',{},12000);
+    if (document.hidden || generation !== armGeneration) {
+      await stop('화면을 벗어나 조종 시작을 취소했습니다');
+      return;
+    }
     lease=data.lease; seq=0; clearDirection();
     status={...status, armed:true, mine:true}; disconnected=false;
     await sendCommand();
@@ -127,7 +145,7 @@ $('arm').addEventListener('click', async () => {
 });
 controls.forEach(button => {
   button.addEventListener('click', () => {
-    if (!lease || stopping || arming) return;
+    if (!lease || stopping || arming || navigating) return;
     if (direction === button.dataset.dir) clearDirection();
     else {
       direction=button.dataset.dir;
@@ -160,14 +178,14 @@ document.querySelectorAll('[data-outcome]').forEach(b=>b.addEventListener('click
   finally{recordBusy=false;await refresh();render();}
 }));
 function hideStop(){
-  if(!lease)return;
+  if(!lease && !arming)return;
   generation++;lease=null;clearDirection();
   if(status)status={...status,armed:false,mine:false};
   navigator.sendBeacon('/api/stop',new Blob([JSON.stringify({})],{type:'application/json'}));render();
 }
 document.addEventListener('visibilitychange',()=>{if(document.hidden)hideStop();else refresh();});
 window.addEventListener('pagehide',hideStop);
-window.addEventListener('blur',()=>{if(lease)stop('화면 전환으로 조종을 종료했습니다');});
+window.addEventListener('blur',()=>{if(lease || arming)stop('화면 전환으로 조종을 종료했습니다');});
 window.addEventListener('offline',()=>{disconnected=true;render();});
 window.addEventListener('online',()=>{refresh();sendCommand(true);});
 let cameraOn=false;
@@ -183,17 +201,80 @@ function renderCameras(){
  if(cameras.some(c=>String(c.index)===selected&&c.connected))$('cameraSelect').value=selected;
  $('cameraSelect').hidden=cameras.length<2;
  $('deviceConfig').textContent=status?.has_arm?'팔 장착 · 카메라':'본체 카메라';
- if(cameraOn)loadCamera();
+ if(cameraOn && currentScreen === 'drive')loadCamera();
 }
-function loadCamera(){ $('cameraError').hidden=true;$('camera').src=`http://${location.hostname}:8080/stream?cam=${$('cameraSelect').value||0}`; }
+function loadCamera(){ $('cameraError').hidden=true;$('camera').src=status?.demo ? '/api/camera/demo.jpg' : `http://${location.hostname}:8080/stream?cam=${$('cameraSelect').value||0}`; }
 $('cameraSelect').addEventListener('change',()=>{if(cameraOn)loadCamera();});
 
 $('cameraToggle').addEventListener('click',()=>{
   cameraOn=!cameraOn;$('cameraBox').hidden=!cameraOn;$('cameraToggle').textContent=cameraOn?'영상 끄기':'영상 켜기';
-  if(cameraOn)loadCamera();
+  if(cameraOn && currentScreen === 'drive')loadCamera();
   else $('camera').removeAttribute('src');
 });
 $('camera').addEventListener('error',()=>$('cameraError').hidden=false);
+function bytes(value) {
+  return Number.isFinite(value) ? `${(value / 1024**3).toFixed(2)} GiB` : '확인 불가';
+}
+async function showScreen(name) {
+  if (!['drive', 'record', 'system'].includes(name) || navigating || arming || preparing || stopping || recordBusy || name === currentScreen) return;
+  navigating = true; render();
+  try {
+    if (lease) {
+      clearDirection();
+      const acknowledged = await sendCommand(true);
+      if (!acknowledged) {
+        await stop();
+        return; // Stay on the current screen when movement cancellation was not acknowledged.
+      }
+    }
+    currentScreen = name;
+    for (const screen of ['drive', 'record', 'system']) $('screen-' + screen).hidden = screen !== name;
+    render();
+    if (cameraOn && name !== 'drive') $('camera').removeAttribute('src');
+    else if (cameraOn) loadCamera();
+    if (name === 'system') await refreshSystem();
+    await refresh();
+  } finally { navigating = false; render(); }
+}
+const known = value => value === null || value === undefined || value === '' ? '확인 불가' : String(value);
+const yesNo = value => value === true ? '예' : value === false ? '아니오' : '확인 불가';
+async function refreshSystem() {
+  if (systemLoading) return;
+  systemLoading = true; $('systemRefresh').disabled = true;
+  $('systemState').textContent = '정보 확인 중…';
+  try {
+    const data = await api('system', undefined, 12000);
+    const stateName = service => ({active:'활성', inactive:'비활성', failed:'실패', unknown:'확인 불가', not_applicable_demo:'데모 · 해당 없음'}[service?.state] || known(service?.state));
+    const rows = [
+      ['장치', data.device_name], ['실행 모드', data.demo ? '합성 데모' : 'ROS 로봇'],
+      ['Git 태그', data.git?.tag || '태그 없음 / 확인 불가'], ['Git 커밋', data.git?.commit],
+      ['추적 파일 변경', yesNo(data.git?.modified)], ['OS', data.os], ['아키텍처', data.architecture],
+      ['ROS 배포판 (환경)', data.ros?.sourced_distro], ['Jazzy 설치 파일', yesNo(data.ros?.jazzy_installed)],
+      ['웹 응답', data.web_server === 'responding' ? '정상 응답' : '확인 불가'],
+      ['웹 서비스', stateName(data.services?.['lekiwi-phone.service'])],
+      ['카메라 서비스', stateName(data.services?.['lekiwi-camera.service'])],
+      ['ROS 제어 프로세스', {simulated:'데모', running_owned_process:'앱 소유 프로세스 실행 중', not_owned_or_not_running:'앱 소유 프로세스 없음 · 외부 상태 별도 확인'}[data.base_process]],
+      ['모터 준비 피드백', (data.motor?.simulated ? '시뮬레이션 · ' : '') + yesNo(data.motor?.feedback_ready)],
+      ['ROS 상태 최신', yesNo(data.motor?.feedback_fresh)],
+      ['제어권', data.control?.mine ? '내 제어권' : data.control?.armed ? '다른 기기' : '조종 중지'],
+      ['다른 명령 발행자', data.control?.other_publishers], ['남은 공간', bytes(data.storage?.free_bytes)],
+      ['기록 경로', data.storage?.path], ['오류', data.fault || data.control?.cleanup_error || '보고된 오류 없음'],
+    ];
+    $('systemInfo').replaceChildren();
+    for (const [label, value] of rows) {
+      const term = document.createElement('dt'), description = document.createElement('dd');
+      term.textContent = label; description.textContent = known(value); $('systemInfo').append(term, description);
+    }
+    $('systemState').textContent = '마지막 조회 ' + new Date().toLocaleTimeString() + ' · 설치 정보 최대 5초 캐시';
+  } catch (error) {
+    $('systemInfo').replaceChildren();
+    $('systemState').textContent = '확인 실패: ' + error.message;
+    if (error.status === 401) await refresh();
+  } finally { systemLoading = false; $('systemRefresh').disabled = false; }
+}
+document.querySelectorAll('[data-screen]').forEach(button => button.addEventListener('click', () => showScreen(button.dataset.screen)));
+$('systemRefresh').addEventListener('click', refreshSystem);
+setInterval(() => { if (currentScreen === 'system' && !$('panel').hidden && !document.hidden) refreshSystem(); }, 10000);
 setInterval(sendCommand,100);
 setInterval(()=>{if(!$('panel').hidden&&!document.hidden)refresh();},1000);
 render();refresh();

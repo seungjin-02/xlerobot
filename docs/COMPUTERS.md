@@ -4,14 +4,14 @@
 
 ## Windows
 
-PowerShell의 `ssh`, `scp`를 확인합니다. 없는 경우 Windows 선택적 기능의 OpenSSH Client를 설치합니다. GitHub 비공개 저장소는 로그인한 브라우저에서 Code → Download ZIP으로 내려받으면 Git 인증 설정 없이 가능합니다.
+PowerShell의 `ssh`, `scp`를 확인합니다. 없는 경우 Windows 선택적 기능의 OpenSSH Client를 설치합니다. 최신 설치 경로는 [Git 설치 안내](GIT_INSTALL.md)입니다. 비공개 저장소는 PC와 Pi에서 각각 Git 인증을 준비합니다. PC 도우미의 Windows/macOS 실행은 아직 미검증입니다.
 
 ```powershell
 ssh <user>@<robot-ip>
 scp -r .\xlerobot <user>@<robot-ip>:/home/<user>/
 ```
 
-로봇에 SSH 접속한 뒤 `cd ~/xlerobot; bash install.sh ...`를 실행합니다. Windows에서 Bash 설치 스크립트를 직접 실행하는 방식이 아닙니다. ZIP 추출 경로가 `xlerobot-main`이면 이름을 바꾸거나 해당 경로를 사용합니다.
+로봇에 SSH 접속한 뒤 Git clone·검증된 태그/커밋 선택을 수행하고 `cd ~/xlerobot; bash install.sh ...`를 실행합니다. Windows에서 로봇용 Bash 설치 스크립트를 직접 실행하지 않습니다.
 
 랜선 직결은 DHCP 서버가 없으면 주소가 자동 배정되지 않을 수 있습니다. 이 노트북의 Ubuntu는 인터넷 공유로 10.42.0.1/24를 사용했지만 Windows에는 같은 주소가 보장되지 않습니다. Windows 인터넷 공유의 실제 어댑터 주소를 확인하거나 공유기에 PC와 로봇을 연결하여 DHCP 주소를 찾으세요. 준비된 로봇은 PC를 AP에 연결해 192.168.4.1로 SSH할 수도 있습니다. PC의 인터넷 연결은 끊길 수 있습니다.
 

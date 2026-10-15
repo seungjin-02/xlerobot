@@ -76,7 +76,7 @@ def write_card(folder, name, ssid, password, pin, url):
     esc=html.escape
     body=f'''<!doctype html><html lang="ko"><meta charset="utf-8"><title>{esc(name)} 연결 카드</title>
 <style>body{{font:16px system-ui;max-width:760px;margin:32px auto;padding:16px;color:#173127}}h1{{font-size:28px}}.codes{{display:flex;gap:24px;flex-wrap:wrap}}section{{flex:1;min-width:250px;border:1px solid #ccd8cd;border-radius:16px;padding:20px}}img{{width:220px;max-width:100%}}code{{word-break:break-all}}@media print{{body{{margin:0}}}}</style>
-<h1>{esc(name)} · 폰 조종</h1><div class="codes"><section><h2>1. Wi-Fi 연결</h2><img src="wifi.svg" alt="Wi-Fi QR"><p>Wi-Fi: <strong>{esc(ssid)}</strong></p><p>암호: <code>{esc(password)}</code></p></section><section><h2>2. 조종 화면 열기</h2><img src="control.svg" alt="조종 URL QR"><p><a href="{esc(url)}">{esc(url)}</a></p><p>접속 코드: <strong>{esc(pin)}</strong></p></section></div>
+<h1>{esc(name)} · Control Center</h1><div class="codes"><section><h2>1. Wi-Fi 연결</h2><p>Wi-Fi: <strong>{esc(ssid)}</strong></p><details><summary>Wi-Fi 암호와 연결 QR 표시 (비공개 보관)</summary><img src="wifi.svg" alt="Wi-Fi 연결 QR"><p>암호: <code>{esc(password)}</code></p></details></section><section><h2>2. 조종 화면 열기</h2><img src="control.svg" alt="웹앱 URL QR"><p><a href="{esc(url)}">{esc(url)}</a></p><p>별도로 설정한 PIN을 입력하세요. URL QR은 Wi-Fi에 연결하거나 인증하지 않습니다.</p></section></div>
 <p>인터넷 없이 연결 유지 선택. 접속이 안 되면 폰 핫스팟과 모바일 데이터를 잠시 끄세요.</p><p>노트북 없이 사용 가능합니다. 설치 후 최초 1회 재부팅하고, 바퀴 방향과 정지를 낮은 설정에서 확인하세요.</p></html>'''
     (folder/'index.html').write_text(body)
     for file in folder.iterdir(): file.chmod(0o600)
@@ -103,8 +103,9 @@ def main():
     parser=argparse.ArgumentParser(description='LeKiwi 최초 설치 · 모터 활성화 없음')
     parser.add_argument('--profile');parser.add_argument('--serial-port');parser.add_argument('--workspace')
     parser.add_argument('--name');parser.add_argument('--ssid');parser.add_argument('--wifi-credentials',type=Path)
-    parser.add_argument('--pin',default=None);parser.add_argument('--camera',default='0');parser.add_argument('--camera-rotation',type=int,choices=(0,90,180,270),default=0)
-    parser.add_argument('--has-arm',action='store_true');parser.add_argument('--wrist-camera');parser.add_argument('--wrist-rotation',type=int,choices=(0,90,180,270),default=0)
+    parser.add_argument('--pin',default=None);parser.add_argument('--camera',default=None);parser.add_argument('--camera-rotation',type=int,choices=(0,90,180,270),default=None)
+    parser.add_argument('--pin-file',type=Path,help='PIN을 명령 인자에 넣지 않고 비공개 파일에서 읽기')
+    parser.add_argument('--has-arm',action='store_true');parser.add_argument('--wrist-camera');parser.add_argument('--wrist-rotation',type=int,choices=(0,90,180,270),default=None)
     parser.add_argument('--ap-profile');parser.add_argument('--skip-network',action='store_true');parser.add_argument('--activate-ap',action='store_true')
     parser.add_argument('--noninteractive',action='store_true');parser.add_argument('--confirm-wheel-map',action='store_true');parser.add_argument('--dry-run',action='store_true')
     parser.add_argument('--config-dir',type=Path,default=Path.home()/'.config/lekiwi-phone')
@@ -152,10 +153,12 @@ def main():
     password=password or secrets.token_urlsafe(12)
     if not 8<=len(password)<=63 or '\n' in password or '\r' in password: raise ValueError('Wi-Fi 암호는 8~63자여야 합니다')
     if not 1<=len(ssid.encode())<=32 or '\n' in ssid or '\r' in ssid: raise ValueError('Wi-Fi 이름은 1~32바이트여야 합니다')
-    pin=args.pin or old.get('pin') or '1119'
+    if args.pin and args.pin_file: raise ValueError('--pin과 --pin-file은 함께 사용할 수 없습니다')
+    pin=(args.pin_file.read_text().strip() if args.pin_file else args.pin) or old.get('pin') or '1119'
     if not isinstance(pin,str) or not pin.isdigit() or not 4<=len(pin)<=8: raise ValueError('접속 코드는 4~8자리 숫자여야 합니다')
     workspace=Path(args.workspace or old.get('workspace') or Path.home()/'.local/share/lekiwi-phone/ros_ws').expanduser().resolve()
-    camera=args.camera
+    camera=args.camera if args.camera is not None else old.get('camera','0')
+    camera_rotation=args.camera_rotation if args.camera_rotation is not None else old.get('camera_rotation',0)
     if not (camera.isdigit() or camera.startswith('/dev/')) or any(c in camera for c in '\n\r'): raise ValueError('카메라는 번호 또는 /dev/... 경로로 지정하세요')
     summary={'robot_name':name,'ssid':ssid,'serial_port':p['serial_port'],'wheel_ids':p['wheel_ids'],'wheel_directions':p['wheel_directions'],'workspace':str(workspace),'camera':camera,'url':'http://192.168.4.1:8090','motor_activation':False,'dry_run':args.dry_run}
     if args.dry_run: print(json.dumps(summary,ensure_ascii=False,indent=2));return
@@ -165,12 +168,13 @@ def main():
     if profile_path.exists(): shutil.copy2(profile_path,config_dir/'robot-profile.previous.yaml')
     profile_temp=profile_path.with_suffix('.yaml.tmp');profile_temp.write_text(yaml.safe_dump(data,sort_keys=False));profile_temp.chmod(0o600);profile_temp.replace(profile_path)
     config={**old,'pin':pin,'profile':str(profile_path),'workspace':str(workspace),'ros_setup':'/opt/ros/jazzy/setup.bash','workspace_setup':str(workspace/'install/setup.bash'),
-            'name':name,'device_mac':current_device,'ssid':ssid,'wifi_password':password,'recordings':str(Path.home()/'lekiwi-recordings'),'camera':camera,'camera_rotation':args.camera_rotation}
-    cameras=[{'role':'front','source':camera,'rotation':args.camera_rotation}]
+            'name':name,'device_mac':current_device,'ssid':ssid,'wifi_password':password,'recordings':old.get('recordings') or str(Path.home()/'lekiwi-recordings'),'camera':camera,'camera_rotation':camera_rotation}
+    cameras=[{'role':'front','source':camera,'rotation':camera_rotation}]
     wrist=args.wrist_camera or next((c['source'] for c in old.get('cameras',[]) if c['role']=='wrist'),None)
     if wrist:
         if not (wrist.isdigit() or wrist.startswith('/dev/')) or any(c in wrist for c in '\n\r'):raise ValueError('집게 카메라 경로가 잘못됐습니다')
-        cameras.append({'role':'wrist','source':wrist,'rotation':args.wrist_rotation})
+        wrist_rotation=args.wrist_rotation if args.wrist_rotation is not None else next((c.get('rotation',0) for c in old.get('cameras',[]) if c['role']=='wrist'),0)
+        cameras.append({'role':'wrist','source':wrist,'rotation':wrist_rotation})
     config.update(has_arm=args.has_arm or old.get('has_arm',False),cameras=cameras)
     config_temp=config_path.with_suffix('.json.tmp');config_temp.write_text(json.dumps(config,ensure_ascii=False,indent=2));config_temp.chmod(0o600);config_temp.replace(config_path)
     card=config_dir/'connection-card';write_card(card,name,ssid,password,pin,summary['url'])

@@ -1,5 +1,39 @@
 # 검증 범위
 
+## Control Center Phase 1 — 2026-10-15 클라우드 검증
+
+- Python 3.12.14, Debian 13 x86_64, Node.js 24.19.0. 기존 테스트 47개를 포함해 **87개 통과** (app 제어26 + tests61), 실패/건너뜀 0.
+- PyYAML6.0.3, Pillow12.3.0, qrcode8.2 설치 및 pip check 통과. QR 테스트는 기존 Pi 의존성 qrcode를 개발 환경에도 설치해 실제 SVG 생성·비밀값 제외·0600 완료 파일을 확인합니다. 앱의 새 런타임 의존성은 없습니다.
+- node --check app/app.js, node --check tests/browser_smoke.cjs, bash -n install.sh prepare-system.sh start.sh, git diff --check 통과.
+- 실제 Chromium + Playwright1.62.1에서 **10개 시나리오 통과**, JavaScript 예외 0. 모바일390×844/PC1280×900, PIN·합성 JPEG·세 화면·읽기 전용 진단·기록 중 메뉴 이동·종료 정지·인증 ZIP 다운로드·blur/hidden·연결 복구·지연 arm·정지 전달 실패 경고·정적 포털 레이아웃을 검사했습니다. hidden은 실제 핸들러에 visibilitychange를 발생시킨 합성 시험이며 폰 OS의 프로세스 정지/강제 종료 보장은 아닙니다.
+- HTTP 세션 만료/잘못된 PIN/외부 Origin/다른 소유자/오래된 seq/읽기 전용 API/모터 상태 미확인 표시를 확인했습니다. episode-v1과 state6/action3, requested/applied 구분, uniform_segments 및 이미지 경로 검증을 새 HTTP 기록에서 확인했습니다. 실제 LeRobotDataset export/readback은 이번 환경에서 실행하지 않았습니다.
+- 설치 사전 검사의 OS·아키텍처·Git 미설치·게이트웨이·DNS·TLS 실패·기존 경로·태그 불일치와 SSH 실패·프로필 오류·설치 실패·서비스 실패·TTY 필수 조건을 모의 시험했습니다. 실제 로컬 임시 Git에서 annotated/lightweight 태그·clone·SHA 대조·의존성 차이·버전 전환/복귀를 검증했습니다. SSH/sudo/Pi 설치를 실제로 수행한 결과는 아닙니다.
+- 기존 설치기 재실행을 격리된 홈/프로필과 모의 systemd로 실행해 PIN/AP 암호·카메라 소스/회전·팔 유무·사용자 지정 기록 경로·motor ticks 제한과 기록 파일 보존을 확인했습니다. 전체 apt/colcon/systemd/AP 실물 동작은 별도입니다.
+- 플랫폼 기존 인증으로 Private 원격 main/태그 조회 성공. 검증된 운영 릴리스 태그는 아직 없으며 게시하지 않았습니다. Pages workflow와 CI 변경은 로컬 검사만 했고 GitHub Actions에서 실행하지 않았습니다.
+
+재현:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-test.txt
+.venv/bin/python -m unittest discover -s app -p test_control.py -v
+.venv/bin/python -m unittest discover -s tests -v
+node --check app/app.js
+bash -n install.sh prepare-system.sh start.sh
+# 개발/CI 전용 브라우저 도구. 앱 런타임에는 필요하지 않음.
+npm install --prefix .local/browser playwright@1.62.1
+node .local/browser/node_modules/playwright/cli.js install chromium
+NODE_PATH="$PWD/.local/browser/node_modules" node tests/browser_smoke.cjs
+```
+
+시스템 Chromium이 없으면 Playwright가 설치한 Chromium을 사용합니다. Linux에서 필요한 OS 라이브러리가 없으면 CI처럼 Playwright의 공식 `install --with-deps chromium`을 사용하세요. npm/브라우저 다운로드가 필요하므로 기본 Python 개발 환경과 구분합니다. 테스트가 시작한 합성 서버만 종료합니다. 결과 JSON과 스크린샷은 무시 경로 `private/control-center-evidence/`에 생성되며 실제 로봇 증거가 아닙니다.
+
+### 남은 실물·외부 검증
+
+깨끗한 Ubuntu24.04 ARM64 Pi에서 Git 인증→실제 검증 릴리스 clone→sudo/의존성/colcon→설정·서비스→재부팅/AP/QR→PIN→본체/집게 카메라→1배 방향/정지→연결 손실/복구→주행 기록→LeRobot 변환을 검증해야 합니다. 기존 설치의 실제 업데이트·의존성 복구와 설정/데이터 백업 복원도 필요합니다. 아이폰/안드로이드의 백그라운드·강제 종료, Windows/macOS PC 도우미, Pages 공개 배포·권한·전체 Git 이력 감사도 미완료입니다.
+
+## 이전 인수인계 시점의 증거 (이번 변경의 실물 검증 아님)
+
 최신 소스 Python26 제어 +21 설치/기록/변환 테스트 통과. node --check app/app.js 통과. 포함한 ROS 소스의 과거 colcon 결과190 tests, failures/errors0. 이는 최신 카메라UI를190개로 검사했다는 의미가 아닙니다.
 
 합성 시범77프레임: 실제 LeRobot0.6.0 데이터셋 변환/readback (image3x480x640,state6,action3). 인증 HTTP 시작/종료/ZIP 다운로드와 terminal stop 검증. UI 모바일 크기 기록 화면 확인은 합성 환경.

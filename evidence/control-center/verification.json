@@ -1,0 +1,148 @@
+{
+  "source_base_commit": "a67415b3a60b5b3127fdd8b2d1bb58726dbdf67c",
+  "feature_branch": "feature/lekiwi-control-center",
+  "python_tests": 87,
+  "checks": [
+    {
+      "check": "control",
+      "exit_code": 0,
+      "command": [
+        "/workspace/xlerobot/.venv/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "app",
+        "-p",
+        "test_control.py",
+        "-v"
+      ],
+      "tests": 26
+    },
+    {
+      "check": "suite",
+      "exit_code": 0,
+      "command": [
+        "/workspace/xlerobot/.venv/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "tests": 61
+    },
+    {
+      "check": "dependencies",
+      "exit_code": 0,
+      "command": [
+        "/workspace/xlerobot/.venv/bin/python",
+        "-m",
+        "pip",
+        "check"
+      ]
+    },
+    {
+      "check": "javascript",
+      "exit_code": 0,
+      "command": [
+        "node",
+        "--check",
+        "app/app.js"
+      ]
+    },
+    {
+      "check": "browser_syntax",
+      "exit_code": 0,
+      "command": [
+        "node",
+        "--check",
+        "tests/browser_smoke.cjs"
+      ]
+    },
+    {
+      "check": "shell",
+      "exit_code": 0,
+      "command": [
+        "bash",
+        "-n",
+        "install.sh",
+        "prepare-system.sh",
+        "start.sh"
+      ]
+    },
+    {
+      "check": "diff",
+      "exit_code": 0,
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ]
+    },
+    {
+      "check": "chromium",
+      "exit_code": 0,
+      "command": [
+        "node",
+        "tests/browser_smoke.cjs"
+      ]
+    }
+  ],
+  "browser": {
+    "demo": true,
+    "physical_hardware_tested": false,
+    "passed": [
+      "PIN, demo camera, mobile layout",
+      "moving screen transition sends idle and keeps lease/recording",
+      "record finish, stop and authenticated ZIP download",
+      "read-only system information and desktop layout",
+      "browser blur stops synthetic control",
+      "transient command/status loss reconnects within existing grace without losing lease",
+      "hidden visibility handler stops synthetic control",
+      "late arm response cannot restore control after blur",
+      "navigation failure stays on drive and retains stop delivery warning",
+      "static installation portal desktop and mobile layout"
+    ],
+    "js_errors": []
+  },
+  "physical_hardware_tested": false,
+  "real_lerobot_export_tested": false,
+  "github_actions_executed": false,
+  "source_sha256": {
+    ".github/workflows/check.yml": "ee5291d47c6c610ecf3d15129bdc17f298e54f61e3a272ca1b6c0b9dde52a322",
+    ".github/workflows/pages.yml": "b5498965878c7dc705f1b96c092ecbee2edee153c9542200bd035d561d8a30d8",
+    "app/app.js": "d3f00a08fa0dbe96b8f7fdf214977d2b61b1ccdaaaba7882814aa4b2909fecdd",
+    "app/camera.py": "3288d734080eb1a13e5ab8e670e1245942518d3ccc6564c05b6d8a8c85d83643",
+    "app/core.py": "3a89641a8fae0719fa85046d82f59420b893d20c8c72808ad7fa8601b9c15b94",
+    "app/icon.svg": "4bdb93338d05a1f993a3050d814a1c27fef83fbd535d538e40ea77a3a09a93dc",
+    "app/index.html": "5e9fb4a8569b35396cbf79f69e8f08c44f20f3a99ff6e6ea8f30c07c38548f64",
+    "app/recorder.py": "45f7bca35f0a3f988db8dfbe23df2c30386454193c076f712a25379ec52ca485",
+    "app/ros_backend.py": "21ba81969114cdc247928cfd273e9e8deca8e7285aa196b04a9976ab9b2322f9",
+    "app/server.py": "d566526f8756621fbfcc0c309c380737037abaa2aa01e47f30a88e4d13200a79",
+    "app/speed_limiter.py": "f964bc75f0bd2af3a6915085da3018f3cf39173d35b4f87777be918a4da6febd",
+    "app/style.css": "2c738ea14d11eb9aef14178af3b4619ebabfa4c7a079d04dc0152d183aa2c24c",
+    "app/system_info.py": "63c26ed5fc014ae5bcab508545f90f5b0d7357badae51a02c134deb62d8287a0",
+    "app/test_control.py": "0ec70011728b1cd9858d3022ab81d9e6c7f85ca9f4d3269db1ec7486f84ea68b",
+    "export_lerobot.py": "35f57377057b3f290ecd40826a1f53c8abfc43ed7ce1a51b30620e2c66d42ca2",
+    "install.sh": "33a098d621a6084e0aefa2bd39cec4ae20d0738c9c583e94c9eda22afde2a0ef",
+    "prepare-system.sh": "60b1e13a1c2d832dcadcc1337f98acbd064ce105473770ddb8b0d8f34e2304a1",
+    "requirements-test.txt": "6df4969ff3d6fe4be35e8b531daa2e517710edff993a36d1c3c88fa374bdd996",
+    "setup_robot.py": "85892b2820596e204fe9713c9bb13134aeaed76219cdb92c937d1b624ea4c443",
+    "site/index.html": "58656801267e60b6ab258141a18cade60d4fbf1e9e09492f2aeb60163392a1bf",
+    "site/style.css": "33f850e5ed97216a5c52eb4f7f570cdd5fdd3aaa7de68f92dfd4029e2f23a019",
+    "start.sh": "a65929b2d572a5c7a455d9fc31421bc6939ac9fa946995fea2cb3ace3a142e85",
+    "tests/browser_smoke.cjs": "f93b8bf2bc968272b2ee27f9c4a9295c1064d26239f183e54fede56b675d8c6d",
+    "tests/test_http.py": "aed7cf6d74e86b2eba718ef866d6e88ad29de37ef933e3eb290efd7ed073f5cb",
+    "tests/test_install_assistant.py": "01729359e89a1919480720d254e0c81c793a35c49348d8a038719002c70f8aad",
+    "tests/test_portable.py": "e94b349c265eb3ff80b2042964dc7322de29315431e80c5ed7932be61ca44f7d",
+    "tests/test_setup_preservation.py": "4151770c7a7865249799830d12572776cdd4175d98619c4511bb00218757be0e",
+    "tests/test_system_info.py": "0c88ce35293392482a9301f2085ebcbfab3db2337498e8992e4f159673078165",
+    "tools/dataset_manifest.py": "0bfd605fa877e2f3cb4c96853a9f4e113ca708d8921c9e09137ed499efeb6cb3",
+    "tools/install_assistant.py": "f4a594f45cf777f6213c53af38bea0348681648d208251f4f0bbf5ae50c618a6",
+    "tools/package.py": "f4be7cfde31177d2761d582b061b296246fb1e9eefb53e428889093a4255fce0",
+    "tools/robot_install.py": "393b26c59ca0067ba5163abbcd7d0bd980321d94a8ac7aeeff2d517771481c68",
+    "tools/verify_robot.py": "709863fbf9df668d63d418d6bbc1ebe650aca16fe57f0766517da3f6e4ebe131"
+  }
+}
