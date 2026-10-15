@@ -1,0 +1,92 @@
+{
+  "ready": true,
+  "missing": [],
+  "counts": {
+    "/scan": 169,
+    "/odom": 170,
+    "/tf": 169,
+    "/tf_static": 169,
+    "/imu/data": 169,
+    "/joint_states": 169,
+    "/points": 0,
+    "/cmd_vel": 169,
+    "/motor_ready": 169,
+    "/diagnostics": 0,
+    "/battery_state": 0,
+    "/camera/camera_info": 0,
+    "/amcl_pose": 0,
+    "/plan": 0,
+    "/local_plan": 0,
+    "/goal_pose": 0,
+    "/map": 0
+  },
+  "valid_messages": {
+    "scan": 169,
+    "odom": 170
+  },
+  "scan_frame": "laser",
+  "invalid_messages": 0,
+  "clock_regressions": 0,
+  "last_header_stamp_ns": {
+    "odom": 1792063792021208499,
+    "scan": 1792063791969597059
+  },
+  "tf_edges": [
+    {
+      "parent": "base_footprint",
+      "child": "laser",
+      "static": true,
+      "stamp_ns": 1792063791969597059
+    },
+    {
+      "parent": "odom",
+      "child": "base_footprint",
+      "static": false,
+      "stamp_ns": 1792063791969597059
+    }
+  ],
+  "duration_s": 8.705583035,
+  "mapping_messages": 677,
+  "removed_map_transforms": 0,
+  "playback_topics": [
+    "/scan",
+    "/odom",
+    "/tf",
+    "/tf_static"
+  ],
+  "command_topics_replayed": false,
+  "map_frame": "map",
+  "map_stamp_ns": 1792063791969597059,
+  "width": 120,
+  "height": 120,
+  "source": "/src/private/slam-verified/episodes/20261015T112943Z-c204aaab/slam/bag",
+  "config": {
+    "scan_topic": "/scan",
+    "odom_topic": "/odom",
+    "base_frame": "base_footprint",
+    "odom_frame": "odom",
+    "topics": {
+      "/scan": "sensor_msgs/msg/LaserScan",
+      "/odom": "nav_msgs/msg/Odometry",
+      "/tf": "tf2_msgs/msg/TFMessage",
+      "/tf_static": "tf2_msgs/msg/TFMessage",
+      "/imu/data": "sensor_msgs/msg/Imu",
+      "/joint_states": "sensor_msgs/msg/JointState",
+      "/points": "sensor_msgs/msg/PointCloud2",
+      "/cmd_vel": "geometry_msgs/msg/Twist",
+      "/motor_ready": "std_msgs/msg/Bool",
+      "/diagnostics": "diagnostic_msgs/msg/DiagnosticArray",
+      "/battery_state": "sensor_msgs/msg/BatteryState",
+      "/camera/camera_info": "sensor_msgs/msg/CameraInfo",
+      "/amcl_pose": "geometry_msgs/msg/PoseWithCovarianceStamped",
+      "/plan": "nav_msgs/msg/Path",
+      "/local_plan": "nav_msgs/msg/Path",
+      "/goal_pose": "geometry_msgs/msg/PoseStamped",
+      "/map": "nav_msgs/msg/OccupancyGrid"
+    }
+  },
+  "map_file": "map.yaml",
+  "synthetic_source": true,
+  "physical_navigation_tested": false,
+  "pose_graph_saved": true
+}

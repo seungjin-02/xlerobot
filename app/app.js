@@ -61,6 +61,11 @@ function render() {
   $('recordState').textContent=rec?.error || rec?.camera_error || (rec?.active ? `${rec.samples}프레임 저장 · 학습에 쓸 수 있는 프레임 ${rec.valid_samples}개` : '조종 시작 후 기록할 수 있습니다. 기록 종료 버튼은 로봇도 정지시킵니다.');
   $('recordDuration').textContent=rec?.active || rec?.finishing ? `기록 시간 ${Math.floor(rec.elapsed_s || 0)}초 · ${rec.fps} Hz 목표` : '요청 명령·출력 제한 후 발행 명령·센서 상태를 구분해 저장합니다.';
   $('recordStorage').textContent=`남은 공간 ${bytes(status?.storage?.free_bytes)} · 시작 시 최소 256 MiB 필요`;
+  const slam=rec?.slam;
+  $('recordSlam').disabled=!slam?.available || !!rec?.active || !!rec?.finishing || recordBusy;
+  $('slamState').textContent=!slam?.available ? 'SLAM 기록은 실제 ROS 2·rosbag2 환경에서 사용할 수 있습니다. 데모에서는 센서를 만들지 않습니다.' :
+    slam?.enabled ? (slam.error || `SLAM ${slam.bag_closed ? '저장 종료' : slam.ready ? '센서 수신 중' : '입력 확인 필요'} · LiDAR ${slam.counts?.[slam.config.scan_topic] || 0}개 · odometry ${slam.counts?.[slam.config.odom_topic] || 0}개 · ${(slam.missing || []).join(', ')}`) :
+    'SLAM을 선택하면 원본 LiDAR·odometry·TF와 제공되는 IMU·관절·진단을 함께 저장합니다. 카메라 없이도 지도용 기록이 가능합니다.';
   const episodes=status?.episodes || [];
   const signature=JSON.stringify(episodes);
   if($('episodes').dataset.signature!==signature){
@@ -72,6 +77,7 @@ function render() {
       const label=document.createElement('span');label.textContent=`${ep.task} · ${names[ep.outcome]||'미분류'} · ${ep.samples}프레임 · 학습 유효 ${ep.valid_samples||0}개`;
       const link=document.createElement('a');link.textContent='다운로드';link.href='/api/record/'+encodeURIComponent(ep.episode_id)+'/download';
       row.append(label,link);$('episodes').append(row);
+      if(ep.slam?.enabled){const quality=document.createElement('small');quality.textContent=ep.slam.valid_for_mapping?'SLAM 입력 검사 통과 · 오프라인 지도 생성 가능':'SLAM 불완전 · 센서/TF 확인 필요';row.append(quality);}
     }
   }
 
@@ -168,7 +174,7 @@ $('prepare').addEventListener('click',async()=>{
 $('stop').addEventListener('click',()=>stop());
 $('recordStart').addEventListener('click',async()=>{
   recordBusy=true;message();render();
-  try{await api('record/start',{task:$('task').value},5000);}
+  try{await api('record/start',{task:$('task').value,slam:$('recordSlam').checked && !!status?.recording?.slam?.available},15000);}
   catch(e){message(e.message);}
   finally{recordBusy=false;await refresh();render();}
 });

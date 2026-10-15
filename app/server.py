@@ -43,9 +43,12 @@ class App:
         self.cameras=config.get('cameras') or [{'role':'front','source':config.get('camera','0'),'rotation':config.get('camera_rotation',0)}]
         profile.update(has_arm=self.has_arm,cameras=self.cameras)
         self.ending_owner=None; self.ending_until_ns=0
+        from slam import configuration, available
+        slam_config = configuration(config.get('slam'),getattr(backend,'output_parameters',{}))
         self.recorder = EpisodeRecorder(config.get('recordings', str(Path.home()/'lekiwi-recordings')),
                                         profile,
-                                        feed=DemoCameraFeed() if isinstance(backend,DemoBackend) else None)
+                                        feed=DemoCameraFeed() if isinstance(backend,DemoBackend) else None,
+                                        slam_config=slam_config,slam_supported=available(isinstance(backend,DemoBackend)))
         self.system_info = SystemInfo(ROOT.parent, self.recorder.root, isinstance(backend, DemoBackend))
 
     def record_sample(self):
@@ -65,6 +68,7 @@ class App:
             try:
                 info=json.loads((path/'episode.json').read_text())
                 result.append({key:info.get(key) for key in ['episode_id','task','outcome','complete','samples','valid_samples']})
+                result[-1]['slam'] = info.get('slam')
             except (OSError,ValueError): continue
         return result
 
@@ -234,7 +238,7 @@ class Handler(BaseHTTPRequestHandler):
                     if self.app.control.owner != owner:
                         raise ControlError('조종 시작을 먼저 누른 뒤 기록하세요')
                 self.app.recorder.profile={**self.app.recorder.profile, **getattr(self.app.control.backend,'output_parameters',{'demo':True}), 'robot_name':self.app.device_name, 'camera_source':self.app.recorder.profile.get('camera_source','0'), 'camera_rotation':self.app.recorder.profile.get('camera_rotation',0)}
-                episode=self.app.recorder.start(owner,data.get('task',''))
+                episode=self.app.recorder.start(owner,data.get('task',''),slam=data.get('slam',False))
                 return self.response(200,{'episode_id':episode})
             if path == '/api/record/finish':
                 if self.app.recorder.owner not in (None,owner): raise ControlError('기록을 시작한 폰에서 종료하세요')

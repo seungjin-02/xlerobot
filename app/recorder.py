@@ -53,7 +53,8 @@ class CameraFeed:
         if self.thread: self.thread.join(timeout=2)
 
 class EpisodeRecorder:
-    def __init__(self, root, device_profile=None, feed=None, fps=20, clock=time.monotonic_ns):
+    def __init__(self, root, device_profile=None, feed=None, fps=20, clock=time.monotonic_ns,
+                 slam_config=None, slam_supported=False, slam_factory=None):
         self.root = Path(root); self.profile = device_profile or {}
         self.feed = feed or CameraFeed(); self.clock = clock; self.fps = fps
         self.lock = threading.RLock(); self.active = False; self.finishing = False
@@ -61,22 +62,30 @@ class EpisodeRecorder:
         self.samples = self.valid_samples = 0; self.last_sample_ns = 0
         self.next_sample_ns = 0
         self.last_episode = None; self.queue = None; self.thread = None
-    def start(self, owner, task):
+        from slam import SlamSession, configuration
+        self.slam_config = slam_config or configuration()
+        self.slam_supported = slam_supported
+        self.slam_factory = slam_factory or SlamSession
+        self.slam = None
+    def start(self, owner, task, slam=False):
+        if type(slam) is not bool: raise ValueError('SLAM 기록 선택은 true/false여야 합니다')
+        if slam and not self.slam_supported: raise ValueError('SLAM 기록에는 실제 ROS 2와 rosbag2_py가 필요합니다. 데모는 지원하지 않습니다')
         task = str(task).strip()
         if not 1 <= len(task) <= 240: raise ValueError('수행할 작업을 1~240자로 입력하세요')
+        # Starting a sensor recorder may take seconds. This lock never belongs to
+        # Controller, and active stays false until the independent process is ready.
         with self.lock:
             if self.active or self.finishing: raise ValueError('기존 기록을 먼저 종료하세요')
             self.root.mkdir(parents=True, exist_ok=True); self.root.chmod(0o700)
             if shutil.disk_usage(self.root).free < 256 * 1024**2: raise ValueError('저장 공간이 256MB 미만입니다')
             self.feed.start()
-        deadline = time.monotonic() + 2
-        while time.monotonic() < deadline:
-            f = self.feed.frame
-            if f and self.clock() - f['received_ns'] < 200_000_000: break
-            time.sleep(.02)
-        else: raise ValueError('카메라 연결을 확인하세요. 기록에는 전방 영상이 필요합니다')
-        with self.lock:
-            if self.active or self.finishing: raise ValueError('다른 기록이 시작됐습니다')
+            if not slam:
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    f = self.feed.frame
+                    if f and self.clock() - f['received_ns'] < 200_000_000: break
+                    time.sleep(.02)
+                else: raise ValueError('카메라 연결을 확인하세요. 일반 기록에는 전방 영상이 필요합니다')
             self.episode_id = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8]
             self.path = self.root / self.episode_id; self.path.mkdir(mode=0o700); (self.path / 'frames').mkdir(mode=0o700)
             self.started_ns = self.clock(); self.wall_started_ns = time.time_ns()
@@ -87,6 +96,16 @@ class EpisodeRecorder:
                          'state_names': ['x_m','y_m','yaw_rad','vx_m_s','vy_m_s','yaw_rate_rad_s'],
                          'action_names': ['vx_m_s','vy_m_s','yaw_rate_rad_s']}
             self._write_meta(); self.queue = queue.Queue(maxsize=256); self.stop_event = threading.Event()
+            self.slam = self.slam_factory(self.slam_config) if slam else None
+            if self.slam:
+                try:
+                    self.slam.start(self.path)
+                    self.meta['slam'] = {'enabled':True,'config':self.slam_config,'bag':'slam/bag'}
+                except Exception as error:
+                    self.slam.stop()
+                    self.meta.update(error=str(error),outcome='interrupted',slam={'enabled':True,'complete':False})
+                    self._write_meta(); self.feed.close(); self.slam = None
+                    raise
             self.active = True; self.finishing = False; self.owner = owner; self.error = None
             self.samples = self.valid_samples = 0; self.last_sample_ns = 0; self.next_sample_ns = 0
             self.thread = threading.Thread(target=self._writer, daemon=True); self.thread.start()
@@ -143,6 +162,10 @@ class EpisodeRecorder:
                     _, doc, jpeg = item
                     if index % 100 == 0 and shutil.disk_usage(self.root).free < 128 * 1024**2:
                         raise OSError('저장 공간이 부족합니다')
+                    if self.slam and index % 20 == 0:
+                        status = self.slam.status()
+                        if status.get('error') or not status.get('ready'):
+                            raise OSError('SLAM 센서 기록 오류: '+str(status.get('error') or status.get('missing')))
                     if jpeg:
                         name = f'frames/{index:07d}.jpg'; (self.path/name).write_bytes(jpeg); doc['image'] = name
                     else: doc['image'] = None
@@ -151,6 +174,18 @@ class EpisodeRecorder:
         except Exception as error:
             self.error = str(error); self.meta['outcome'] = 'interrupted'
         finally:
+            if self.slam:
+                try:
+                    summary = self.slam.stop()
+                    self.meta['slam'].update(summary)
+                    if not summary.get('complete') or not summary.get('ready'):
+                        self.error = self.error or 'SLAM 센서 기록 불완전: manifest와 capture.log 확인'
+                    self.meta['slam']['valid_for_mapping'] = bool(summary.get('complete') and summary.get('ready'))
+                    from slam import atomic_json
+                    atomic_json(self.path/'slam/manifest.json',self.meta['slam'])
+                except Exception as error:
+                    self.error = str(error)
+                if self.error: self.meta['outcome'] = 'interrupted'
             self.meta.update(ended_monotonic_ns=self.clock(), samples=self.samples, valid_samples=self.valid_samples,
                              complete=self.error is None, error=self.error)
             try: self._write_meta()
@@ -162,7 +197,9 @@ class EpisodeRecorder:
         return {'active':self.active,'finishing':self.finishing,'mine':bool(self.owner) and self.owner==owner,
                 'episode_id':self.episode_id,'samples':self.samples,'valid_samples':self.valid_samples,
                 'error':self.error,'camera_error':self.feed.error,'last_episode':self.last_episode,'fps':self.fps,
-                'elapsed_s':max(0, (self.clock()-self.started_ns)/1e9) if self.active or self.finishing else 0}
+                'elapsed_s':max(0, (self.clock()-self.started_ns)/1e9) if self.active or self.finishing else 0,
+                'slam':{'available':self.slam_supported,'enabled':self.slam is not None,
+                        'config':self.slam_config, **(self.slam.status() if self.slam else {})}}
     def close(self):
         if self.active or self.finishing: self.finish(None,'interrupted',force=True)
         self.feed.close()

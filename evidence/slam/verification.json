@@ -1,0 +1,51 @@
+{
+  "date_utc": "2026-10-15",
+  "base_commit": "e9c020f",
+  "branch": "feature/slam-recording",
+  "physical_hardware_tested": false,
+  "real_environment_map_created": false,
+  "synthetic_fixture": "6m x 6m square room, mathematical scan/odom/TF and fake motor integration; not a physics simulator",
+  "python": {
+    "app_control_passed": 26,
+    "tests_passed": 128,
+    "failed": 0,
+    "skipped": 0
+  },
+  "chromium": {
+    "application_scenarios_passed": 12,
+    "administrator_scenarios_passed": 8
+  },
+  "static_checks": [
+    "Python compileall",
+    "pip check",
+    "bash -n install.sh prepare-system.sh start.sh tools/prepare_slam.sh",
+    "node --check app/app.js updater/admin.js",
+    "git diff --check"
+  ],
+  "ros": {
+    "image": "ros:jazzy-ros-base",
+    "image_digest": "sha256:066420e07f60aa18262f2479981def87ebcfcec42eefb0c0c57c4a46098348ca",
+    "os": "Ubuntu 24.04 amd64",
+    "recording_mapping_command": "python3 tests/ros_slam_integration.py --output private/slam-verified",
+    "navigation_command": "python3 tests/ros_navigation_integration.py --map private/slam-verified/map/map.yaml --output private/slam-verified/navigation",
+    "recording_and_mapping_passed": true,
+    "navigation_passed": true,
+    "scan_messages": 169,
+    "map_cells": [
+      120,
+      120
+    ],
+    "resolution_m": 0.05,
+    "pose_graph_saved": true,
+    "nav2_goal_status": 4,
+    "live_synthetic_sensor_cli_passed": true,
+    "preparation_only_navigation_cli_passed": true
+  },
+  "limitations": [
+    "No robot or physical LiDAR connected",
+    "No ARM64 hardware validation",
+    "Actual topics, calibration, timing and footprint remain unknown",
+    "No physical braking or obstacle avoidance validation",
+    "No policy trainer or multimodal learning exporter implemented"
+  ]
+}

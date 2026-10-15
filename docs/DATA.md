@@ -1,5 +1,7 @@
 # 기록·백업·학습용 변환
 
+SLAM 옵션에서 추가되는 원본 LiDAR/odometry/TF/IMU 등 rosbag과 Ubuntu 지도 생성·Nav2 사용법은 [SLAM.md](SLAM.md)를 참조하세요. 기존 episode-v1과 LeRobot 변환 입력은 유지합니다. LiDAR가 기존 LeRobot export feature에 자동으로 들어가지는 않습니다. 카메라 없는 SLAM 기록은 지도를 위한 것이며 이미지 정책 학습 유효 프레임을 만들지 않습니다.
+
 실제 원본은 로봇 `~/lekiwi-recordings/<episode-id>/`입니다. 다운로드는 선택사항이고 폴더를 PC/외장SSD로 복사해도 됩니다. 기록 종료 후 복사하여 작성 중인 파일을 피합니다.
 
 Ubuntu/PowerShell에서 아래처럼 복사합니다(경로와 계정은 실제 값으로 교체).

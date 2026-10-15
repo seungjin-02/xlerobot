@@ -1,0 +1,67 @@
+{
+  "ready": true,
+  "missing": [],
+  "counts": {
+    "/scan": 57,
+    "/odom": 58,
+    "/tf": 57,
+    "/tf_static": 58,
+    "/imu/data": 57,
+    "/joint_states": 57,
+    "/points": 0,
+    "/cmd_vel": 57,
+    "/motor_ready": 57,
+    "/diagnostics": 0,
+    "/battery_state": 0,
+    "/camera/camera_info": 0,
+    "/amcl_pose": 0,
+    "/plan": 0,
+    "/local_plan": 0,
+    "/goal_pose": 0,
+    "/map": 0
+  },
+  "valid_messages": {
+    "scan": 57,
+    "odom": 58
+  },
+  "scan_frame": "laser",
+  "invalid_messages": 0,
+  "clock_regressions": 0,
+  "last_header_stamp_ns": {
+    "scan": 1792063827144792042,
+    "odom": 1792063827196094848
+  },
+  "tf_edges": [
+    {
+      "parent": "base_footprint",
+      "child": "laser",
+      "static": true,
+      "stamp_ns": 1792063827144792042
+    },
+    {
+      "parent": "odom",
+      "child": "base_footprint",
+      "static": false,
+      "stamp_ns": 1792063827144792042
+    }
+  ],
+  "publishers": {
+    "/scan": 1,
+    "/odom": 1,
+    "/tf": 1,
+    "/tf_static": 1,
+    "/imu/data": 1,
+    "/joint_states": 1,
+    "/points": 0,
+    "/cmd_vel": 1,
+    "/motor_ready": 1,
+    "/diagnostics": 0,
+    "/battery_state": 0,
+    "/camera/camera_info": 0,
+    "/amcl_pose": 0,
+    "/plan": 0,
+    "/local_plan": 0,
+    "/goal_pose": 0,
+    "/map": 0
+  }
+}
