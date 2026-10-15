@@ -16,7 +16,7 @@ from daemon import Admin, Handler
 class Source:
     def refresh(self): pass
     def describe(self,tag,old):return {'tag':tag,'commit':'b'*40,'notes':'합성 검증 릴리스 <script>window.pwned=true</script>','changes':['app/server.py']}
-    def list(self,old):return [self.describe('v2.0.0',old)]
+    def list(self,old):return [] if old=='b'*40 else [self.describe('v2.0.0',old)]
     def extract(self,sha,path):path.mkdir();(path/'fixture').write_text('synthetic release')
 class Robot:
     def idle(self):return {'armed':False}
