@@ -15,8 +15,8 @@
     844
   ],
   "checks": {
-    "desktop_slides": 14,
-    "mobile_slides": 14,
+    "desktop_slides": 4,
+    "mobile_slides": 4,
     "horizontal_overflow": false,
     "missing_images": 0,
     "javascript_exceptions": 0,
@@ -25,12 +25,16 @@
     "timeline_scrub_and_pause": "passed",
     "keyboard_navigation": "passed",
     "standalone_embedded_assets": "passed",
-    "both_version_videos_recorded": true
+    "installation_site_url": "https://seungjin-02.github.io/xlerobot/",
+    "installation_site_http_status": 200,
+    "sequential_main_to_slam": "passed",
+    "automatic_tour_56_seconds": "passed"
   },
   "notes": [
     "Concept animation does not run ROS, SLAM, Nav2 or motor commands",
     "Real app screenshots are from demo mode",
     "Synthetic map came from the separately validated actual SLAM run",
     "No remote publication or main merge"
-  ]
+  ],
+  "presentation_focus": "Four self-guided screens: laptop versus phone, real app, sensor extension, recording option"
 }
