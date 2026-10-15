@@ -159,7 +159,7 @@ def main():
         if not shutil.which(program): raise SystemExit('Missing system prerequisite: '+program)
     # Verify the baseline using the robot account; never invoke repo-configured programs as root.
     prefix=['setpriv','--reuid='+str(account.pw_uid),'--regid='+str(account.pw_gid),'--clear-groups','--no-new-privs','--']
-    env={**os.environ,'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null','GIT_TERMINAL_PROMPT':'0'}
+    env={**os.environ,'HOME':str(home),'XDG_CONFIG_HOME':str(home/'.config'),'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':'/dev/null','GIT_TERMINAL_PROMPT':'0'}
     def git(*a):
         return subprocess.check_output(prefix+['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',str(ROOT),*a],env=env).decode().strip()
     if git('rev-parse','HEAD')!=args.baseline_commit or git('status','--porcelain'):

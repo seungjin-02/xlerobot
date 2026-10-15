@@ -46,8 +46,11 @@ def manifest(root, links_root=None):
     root_stat=metadata(root)
     for p in sorted(root.rglob('*')):
         if p.is_symlink():
-            allowed = Path(links_root or root).resolve()
-            if not p.resolve().is_relative_to(allowed): raise UpdateError('external_links_require_manual_backup')
+            # Relative links resolve inside the copied tree; absolute links may still
+            # refer to the original workspace. Both must remain within verified roots.
+            allowed = (root.resolve(), Path(links_root or root).resolve())
+            if not any(p.resolve().is_relative_to(base) for base in allowed):
+                raise UpdateError('external_links_require_manual_backup')
             files[str(p.relative_to(root))] = {'bytes': 0, 'link': os.readlink(p), **metadata(p)}
             continue
         if p.is_dir():

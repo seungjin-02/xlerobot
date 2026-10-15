@@ -165,6 +165,18 @@ class TransactionTests(unittest.TestCase):
         with self.assertRaises(UpdateError):self.apply()
         self.assertEqual(self.engine.baseline(),OLD)
 
+    def test_relative_workspace_symlink_snapshot_and_restore(self):
+        workspace=self.paths['workspace']
+        nested=workspace/'install';nested.mkdir()
+        (nested/'relative').symlink_to('../keep')
+        self.engine.update('v2.0.0',NEW,False,True)
+        backup=Path(self.engine.state['backup'])
+        self.assertEqual((backup/'workspace/install/relative').read_text(),'workspace fixture')
+        self.assertEqual(manifest(workspace),manifest(backup/'workspace',links_root=workspace))
+        (workspace/'keep').write_text('changed')
+        self.engine.restore_files(backup)
+        self.assertEqual((workspace/'install/relative').read_text(),'workspace fixture')
+
     def test_internal_workspace_symlink_backup_is_verified(self):
         w=self.paths['workspace'];(w/'linked').symlink_to(w/'keep')
         target=self.home/'copy';before=snapshot(w,target)
