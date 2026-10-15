@@ -36,5 +36,5 @@
     "Synthetic map came from the separately validated actual SLAM run",
     "No remote publication or main merge"
   ],
-  "presentation_focus": "Mobile portability and visibility: carried laptop/keyboard versus phone touch, camera, recording and device status; four self-guided screens"
+  "presentation_focus": "Product overview: browser/AP/ROS architecture, actual app UI, control/observation/recording/management; four self-guided screens"
 }
