@@ -21,12 +21,14 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from core import Controller, ControlError, DemoBackend
 from system_info import SystemInfo, storage_info
+from maintenance import Maintenance
 
 ROOT = Path(__file__).resolve().parent
 
 class App:
     def __init__(self, backend, pin, config=None):
         self.control = Controller(backend)
+        self.maintenance = Maintenance()
         self.pin = str(pin)
         self.sessions = {}
         self.attempts = defaultdict(deque)
@@ -138,8 +140,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/system':
             owner = self.session()
             if not owner: return self.response(401, {'error': '접속 코드를 입력하세요'})
-            return self.response(200, self.app.system_info.snapshot(
-                self.app.control.status(owner), self.app.device_name, self.app.fault))
+            info = self.app.system_info.snapshot(self.app.control.status(owner), self.app.device_name, self.app.fault)
+            info['updates'] = self.app.maintenance.status()
+            return self.response(200, info)
         if path == '/api/camera/demo.jpg':
             if not self.session(): return self.response(401, {'error': '접속 코드를 입력하세요'})
             if not isinstance(self.app.control.backend, DemoBackend):
@@ -164,6 +167,7 @@ class Handler(BaseHTTPRequestHandler):
             data['recording'] = self.app.recorder.status(owner)
             data['storage'] = storage_info(self.app.recorder.root)
             data['episodes'] = self.app.episodes()
+            data['updates'] = self.app.maintenance.status()
             return self.response(200, data)
         match = re.fullmatch(r'/api/record/([0-9]{8}T[0-9]{6}Z-[a-f0-9]{8})/download',path)
         if match:
@@ -192,6 +196,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200); self.headers_common(mime, len(body)); self.end_headers(); self.wfile.write(body)
 
     def do_POST(self):
+        gate = None
         try:
             if not self.valid_host(): return self.response(403, {'error': 'Invalid host'})
             origin = self.headers.get('Origin')
@@ -221,6 +226,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.response(200, {'ok': True}, f'lekiwi_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200')
             owner = self.session()
             if not owner: return self.response(401, {'error': '접속 코드를 입력하세요'})
+            if path in ('/api/arm', '/api/prepare', '/api/record/start', '/api/command'):
+                gate = self.app.maintenance.allow()
+                gate.__enter__()
             if path == '/api/record/start':
                 with self.app.control.lock:
                     if self.app.control.owner != owner:
@@ -267,6 +275,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             logging.exception('Request failed')
             return self.response(503, {'error': '로봇 제어 실패: 상태와 연결을 확인하세요'})
+        finally:
+            if gate is not None:
+                gate.__exit__(None, None, None)
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True

@@ -13,6 +13,7 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - run: node --check app/app.js
       - run: bash -n install.sh prepare-system.sh start.sh
+      - run: node --check updater/admin.js
   browser:
     runs-on: ubuntu-latest
     steps:
@@ -27,6 +28,10 @@ jobs:
       - run: npm install --prefix "$RUNNER_TEMP/browser" playwright@1.62.1
       - run: node "$RUNNER_TEMP/browser/node_modules/playwright/cli.js" install --with-deps chromium
       - run: node tests/browser_smoke.cjs
+        env:
+          NODE_PATH: ${{ runner.temp }}/browser/node_modules
+          TEST_PYTHON: python
+      - run: node tests/admin_browser.cjs
         env:
           NODE_PATH: ${{ runner.temp }}/browser/node_modules
           TEST_PYTHON: python

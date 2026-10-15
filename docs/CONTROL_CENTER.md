@@ -1,5 +1,7 @@
 # LeKiwi Control Center — Phase 1 분석·구현
 
+**Phase 2 opt-in 구현:** 별도 관리자 서비스·서명 앱 업데이트·잠금·백업/복구 구현은 [PHASE2.md](PHASE2.md)를 참고하세요. 실물 장비에는 아직 적용하지 않았습니다. 아래 Phase 1/원설계의 범위와 구분합니다.
+
 **현재 상태:** 사용자가 2026-10-15 원본을 Public으로 전환했습니다. 아래 공개 배포 비교는 최초 설계 당시의 판단 기록입니다. 현재 출처·포털은 [PUBLICATION.md](PUBLICATION.md), 제공된 개발 지시서 기준 추적은 [REQUIREMENTS.md](REQUIREMENTS.md)를 따릅니다.
 
 ## 출발점과 최종 구조
