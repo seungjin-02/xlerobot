@@ -59,6 +59,13 @@ class Runtime:
             raise UpdateError('robot_not_idle_or_state_unknown')
         return status
 
+    def application_idle(self):
+        status = self.idle()
+        # Feedback may be unavailable, but the app must explicitly own no base process.
+        if status.get('base_running') is not False:
+            raise UpdateError('application_motor_process_active_or_unknown')
+        return status
+
     def health(self, expected_commit):
         client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         for attempt in range(15):
@@ -148,8 +155,8 @@ class Engine:
                 preserve_ownership(backup/name,path)
             if manifest(path) != expected: raise UpdateError('restore_verification_failed')
 
-    def update(self, tag, expected_commit, physical_ack):
-        if physical_ack is not True: raise UpdateError('physical_motor_isolation_ack_required')
+    def update(self, tag, expected_commit, physical_ack=False, app_ack=False):
+        if physical_ack is not True and app_ack is not True: raise UpdateError('maintenance_confirmation_required')
         if not isinstance(expected_commit, str) or not SHA.fullmatch(expected_commit): raise UpdateError('invalid_expected_commit')
         with self.exclusive():
             if self.state['phase'] not in TERMINAL or (self.root/'maintenance.json').exists():
@@ -160,7 +167,8 @@ class Engine:
             self.publish('preparing', tag=tag, commit=expected_commit, previous=old, error=None, backup=None)
             stopped = False
             try:
-                self.runtime.idle()
+                check_idle = self.runtime.application_idle if app_ack is True else self.runtime.idle
+                check_idle()
                 self.sources.refresh()
                 release = self.sources.describe(tag, old)
                 if release['commit'] != expected_commit or old == expected_commit: raise UpdateError('release_commit_changed_or_already_installed')
@@ -169,6 +177,7 @@ class Engine:
                 atomic_json(release_dir/'.lekiwi-release.json', {'commit':expected_commit,'tag':tag}, 0o644)
                 space = sum(manifest(p)['bytes'] for p in self.paths.values())
                 if shutil.disk_usage(self.root).free < space*2+256*1024**2: raise UpdateError('insufficient_backup_space')
+                check_idle()
                 stopped = True
                 self.runtime.service('stop')
                 backup = self.root/'backups'/uuid.uuid4().hex
@@ -182,6 +191,7 @@ class Engine:
                 self.publish('verifying')
                 self.runtime.service('start')
                 self.runtime.health(expected_commit)
+                if app_ack is True: self.runtime.application_idle()
                 self.check_unchanged(backup)
                 self.publish('succeeded')
                 self.release()
@@ -223,12 +233,13 @@ class Engine:
             except Exception:
                 self.publish('manual_recovery_required', error='boot_recovery_failed')
 
-    def confirm_recovery(self, physical_ack):
-        if physical_ack is not True: raise UpdateError('physical_motor_isolation_ack_required')
+    def confirm_recovery(self, physical_ack=False, app_ack=False):
+        if physical_ack is not True and app_ack is not True: raise UpdateError('maintenance_confirmation_required')
         with self.exclusive():
             if self.state['phase'] != 'recovered_unverified': raise UpdateError('manual_recovery_required')
             self.runtime.service('start')
             self.runtime.health(self.baseline())
+            if app_ack is True: self.runtime.application_idle()
             backup=self.state.get('backup')
             if backup and all((Path(backup)/(name+'-manifest.json')).is_file() for name in self.paths):
                 self.check_unchanged(Path(backup))

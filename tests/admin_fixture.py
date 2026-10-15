@@ -20,6 +20,7 @@ class Source:
     def extract(self,sha,path):path.mkdir();(path/'fixture').write_text('synthetic release')
 class Robot:
     def idle(self):return {'armed':False}
+    def application_idle(self):return self.idle()
     def service(self,verb):pass
     def health(self,sha):time.sleep(.3)
 class LocalFixture(Handler):

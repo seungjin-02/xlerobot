@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in migration from user units to sandboxed system units. Never run by a release."""
 import argparse
+import fcntl
 import getpass
 import hashlib
 import json
@@ -13,6 +14,7 @@ import shutil
 import ssl
 import subprocess
 import sys
+import time
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'updater'))
@@ -99,7 +101,9 @@ def main():
     parser.add_argument('--baseline-commit',required=True)
     parser.add_argument('--signer',action='append',required=True,help='trusted primary GPG fingerprint')
     parser.add_argument('--public-key',type=Path,required=True)
-    parser.add_argument('--motor-power-isolated',action='store_true')
+    safety = parser.add_mutually_exclusive_group()
+    safety.add_argument('--motor-power-isolated',action='store_true')
+    safety.add_argument('--app-motors-disabled',action='store_true',help='explicit app-disarmed migration; rechecked under maintenance lock')
     parser.add_argument('--admin-address', help='optional fixed private IPv4 for mobile HTTPS admin')
     parser.add_argument('--tls-cert', type=Path, help='certificate with admin IPv4 in subjectAltName')
     parser.add_argument('--tls-key', type=Path, help='matching private TLS key; copied root-only')
@@ -135,8 +139,8 @@ def main():
         print('Mobile administrator HTTPS:', 'https://'+address+':8093', '(phone must trust the certificate)')
     print('GPG signer count:',len(args.signer),'automatic OS/driver/schema changes: disabled')
     if not args.apply: return
-    if os.geteuid()!=0 or not args.motor_power_isolated or not sys.stdin.isatty():
-        raise SystemExit('Apply requires root, interactive hidden password input, and physical motor isolation.')
+    if os.geteuid()!=0 or not (args.motor_power_isolated or args.app_motors_disabled) or not sys.stdin.isatty():
+        raise SystemExit('Apply requires root, interactive hidden password input, and either motor isolation or app-disarmed maintenance confirmation.')
     release=platform.freedesktop_os_release()
     if release.get('ID')!='ubuntu' or release.get('VERSION_ID')!='24.04' or platform.machine()!='aarch64':
         raise SystemExit('Managed deployment requires Ubuntu 24.04 ARM64; this host is unsupported.')
@@ -160,7 +164,9 @@ def main():
         return subprocess.check_output(prefix+['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',str(ROOT),*a],env=env).decode().strip()
     if git('rev-parse','HEAD')!=args.baseline_commit or git('status','--porcelain'):
         raise SystemExit('Baseline SHA must match a clean checkout. No reset/stash is performed.')
-    Runtime(config).idle()
+    runtime = Runtime(config)
+    check_idle = runtime.application_idle if args.app_motors_disabled else runtime.idle
+    check_idle()
     password=getpass.getpass('New update administrator password (at least 16 characters): ')
     if len(password)<16 or password!=getpass.getpass('Repeat administrator password: '):
         raise SystemExit('Password confirmation failed.')
@@ -175,7 +181,16 @@ def main():
         if system.exists() or system.is_symlink(): raise SystemExit('Existing system unit requires manual review: '+name)
     os.umask(0o077)
     root.mkdir(mode=0o755);root.chmod(0o755);settings.mkdir(mode=0o700)
+    # Existing Phase 2-capable user app immediately honors this gate. Hold until process exits.
+    migration_lock=(root/'operation.lock').open('a+')
+    os.chmod(root/'operation.lock',0o644)
+    fcntl.flock(migration_lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
+    atomic_json(root/'maintenance.json',{'blocked':True,'reason':'managed_migration'},0o644)
+    atomic_json(root/'status.json',{'phase':'migrating','updated_at':time.time()},0o644)
+    check_idle()
     backup=root/'bootstrap-backup';backup.mkdir(mode=0o700)
+    atomic_json(backup/'migration-safety.json',{'application_disabled_confirmation':args.app_motors_disabled,
+        'physical_motor_power_isolated_confirmation':args.motor_power_isolated})
     for name,path in paths.items(): snapshot(path,backup/name)
     user_units=home/'.config/systemd/user'
     for name in plan:
@@ -232,10 +247,17 @@ def main():
             for verb in ('is-active','is-enabled')}
     atomic_json(backup/'previous-user-services.json',previous)
     try:
+        check_idle()
         subprocess.run(user_systemctl+['disable','--now',*previous],env=user_env,check=True)
+        for unit in previous:
+            state=subprocess.run(user_systemctl+['is-active',unit],env=user_env,capture_output=True,text=True).stdout.strip()
+            if state!='inactive': raise UpdateError('previous_service_not_stopped')
+        (root/'maintenance.json').unlink()
+        migration_lock.close()
         subprocess.run(['systemctl','daemon-reload'],check=True)
         subprocess.run(['systemctl','enable','--now',*plan],check=True)
-        Runtime(config).health(args.baseline_commit)
+        runtime.health(args.baseline_commit)
+        if args.app_motors_disabled: runtime.application_idle()
     except Exception:
         subprocess.run(['systemctl','disable','--now',*plan],capture_output=True)
         for name,state in previous.items():
