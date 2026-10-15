@@ -28,7 +28,34 @@
     "installation_site_url": "https://seungjin-02.github.io/xlerobot/",
     "installation_site_http_status": 200,
     "sequential_main_to_slam": "passed",
-    "automatic_tour_56_seconds": "passed"
+    "automatic_tour_56_seconds": "passed",
+    "responsive_layout_sizes": [
+      [
+        1366,
+        768
+      ],
+      [
+        1440,
+        960
+      ],
+      [
+        1920,
+        1080
+      ],
+      [
+        2560,
+        1440
+      ],
+      [
+        768,
+        1024
+      ],
+      [
+        390,
+        844
+      ]
+    ],
+    "large_app_images_and_readability": "reviewed in desktop screenshots"
   },
   "notes": [
     "Concept animation does not run ROS, SLAM, Nav2 or motor commands",
@@ -36,5 +63,6 @@
     "Synthetic map came from the separately validated actual SLAM run",
     "No remote publication or main merge"
   ],
-  "presentation_focus": "Product overview: browser/AP/ROS architecture, actual app UI, control/observation/recording/management; four self-guided screens"
+  "presentation_focus": "Product overview: browser/AP/ROS architecture, actual app UI, control/observation/recording/management; four self-guided screens",
+  "delivery_file": "LeKiwi-introduction-v2.html"
 }

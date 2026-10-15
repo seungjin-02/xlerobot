@@ -16,6 +16,7 @@ html = (root / 'index.html').read_text().replace('<link rel="stylesheet" href="s
     '<style>' + (root / 'style.css').read_text() + '</style>').replace(
     '<script src="app.js"></script>', '<script>' + script.replace('</script>', '<\\/script>') + '</script>')
 (out / 'LeKiwi-presentation.html').write_text(html)
+(out / 'LeKiwi-introduction-v2.html').write_text(html)
 with zipfile.ZipFile(out / 'LeKiwi-presentation.zip', 'w', zipfile.ZIP_DEFLATED) as bundle:
     for p in sorted(root.rglob('*')):
         if p.is_file() and '__pycache__' not in p.parts:
