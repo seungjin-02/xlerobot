@@ -18,7 +18,7 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'updater'))
 sys.path.insert(0,str(ROOT/'app'))
-from common import UpdateError, atomic_json, manifest, snapshot, switch_link
+from common import valid_admin_password, UpdateError, atomic_json, manifest, snapshot, switch_link
 from engine import Engine, Runtime
 from releases import Releases
 from daemon import Admin, Handler
@@ -213,6 +213,22 @@ class AdminTests(unittest.TestCase):
         class FakeEngine:
             state={'phase':'idle'}
         self.admin=Admin(FakeEngine(),self.hash,self.salt)
+
+    def test_six_digit_administrator_password_with_existing_auth_controls(self):
+        value='123456'
+        hashed=hashlib.scrypt(value.encode(),salt=bytes.fromhex(self.salt),n=16384,r=8,p=1).hex()
+        admin=Admin(object(),hashed,self.salt)
+        token=admin.login(value)
+        self.assertTrue(admin.authenticated('lekiwi_admin='+token))
+        for _ in range(4):
+            with self.assertRaises(UpdateError):admin.login('654321')
+        with self.assertRaisesRegex(UpdateError,'rate_limited'):admin.login(value)
+
+    def test_short_password_requires_exactly_six_ascii_digits(self):
+        self.assertTrue(valid_admin_password('123456'))
+        self.assertTrue(valid_admin_password('long-admin-password'))
+        for value in ('12345','1234567','abcdef','１２３４５６',None,'a'*257):
+            with self.subTest(value=value):self.assertFalse(valid_admin_password(value))
 
     def test_pin_does_not_authenticate_admin_and_rate_limit_is_global(self):
         for _ in range(5):

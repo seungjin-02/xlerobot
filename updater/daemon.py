@@ -15,7 +15,7 @@ import socket
 import threading
 import time
 
-from common import UpdateError
+from common import UpdateError, valid_admin_password
 from engine import Engine, Runtime
 from releases import Releases
 from network import lan_address, tls_context
@@ -28,7 +28,7 @@ class Admin:
         self.job_error = None
 
     def login(self, password):
-        if not isinstance(password, str) or not 16 <= len(password) <= 256: raise UpdateError('administrator_login_failed')
+        if not valid_admin_password(password): raise UpdateError('administrator_login_failed')
         with self.lock:
             now = time.monotonic()
             while self.attempts and now-self.attempts[0]>60: self.attempts.popleft()

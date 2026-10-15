@@ -5,7 +5,7 @@ Phase 2는 별도 관리자 서비스로 전환해야 활성화되는 opt-in 구
 ## 구현 범위
 
 - 로봇 웹 시스템 화면: 업데이트 진행/차단 상태를 읽습니다. 일반 PIN API에 셸·URL·파일 경로 실행 권한을 추가하지 않습니다.
-- 별도 관리자 화면: 기본은 PC의 SSH 터널로 접속하며, 별도 opt-in HTTPS 설정 시 휴대폰에서 직접 접속합니다. 최소 16자 별도 관리자 비밀번호(scrypt), HttpOnly/SameSite 쿠키, 15분 세션, 분당 5회 전역 로그인 제한, Origin/Host 검사와 제한된 HTTP 요청 크기/동시 접속을 사용합니다.
+- 별도 관리자 화면: 기본은 PC의 SSH 터널로 접속하며, 별도 opt-in HTTPS 설정 시 휴대폰에서 직접 접속합니다. 6자리 ASCII 숫자 또는 16~256자 별도 관리자 비밀번호(scrypt), HttpOnly/SameSite 쿠키, 15분 세션, 분당 5회 전역 로그인 제한, Origin/Host 검사와 제한된 HTTP 요청 크기/동시 접속을 사용합니다.
 - 별도 실행 서비스: root 소유 `/usr/local/lib/lekiwi-updater` 코드와 `/etc/lekiwi-updater` 정책만 신뢰합니다. HTTP 입력은 태그·전체 SHA·현장 모터 전원 분리 확인뿐입니다. 임의 명령·원격 주소·경로·정책 변경 API가 없습니다.
 - Git fetch/서명 확인은 권한 없는 `lekiwi-fetch` 계정으로 실행합니다. 원본은 고정 HTTPS 저장소이며 이동한 태그를 강제 덮어쓰지 않습니다. annotated GPG 태그, 명시한 신뢰 fingerprint, main 포함 여부, 기존 버전의 후속 커밋, 메타데이터 및 변경 범위를 재검증합니다.
 - 릴리스를 root 소유의 독립 디렉터리에 추출합니다. 링크/경로 탈출/특수 파일과 큰 아카이브를 거부하며 릴리스 코드를 root로 실행하지 않습니다. Git hook/filter나 릴리스의 install.sh를 root로 실행하지 않습니다.

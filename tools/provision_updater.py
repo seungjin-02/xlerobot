@@ -18,7 +18,7 @@ import time
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'updater'))
-from common import SHA, UpdateError, atomic_json, snapshot, switch_link
+from common import SHA, UpdateError, atomic_json, snapshot, switch_link, valid_admin_password
 from engine import Runtime
 from releases import Releases
 from network import lan_address, verify_certificate_ip
@@ -167,8 +167,8 @@ def main():
     runtime = Runtime(config)
     check_idle = runtime.application_idle if args.app_motors_disabled else runtime.idle
     check_idle()
-    password=getpass.getpass('New update administrator password (at least 16 characters): ')
-    if len(password)<16 or password!=getpass.getpass('Repeat administrator password: '):
+    password=getpass.getpass('New update administrator password (6 digits or at least 16 characters): ')
+    if not valid_admin_password(password) or password!=getpass.getpass('Repeat administrator password: '):
         raise SystemExit('Password confirmation failed.')
     worker='lekiwi-fetch'
     try: fetcher=pwd.getpwnam(worker)
