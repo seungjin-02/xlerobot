@@ -12,15 +12,17 @@
 
 원본은 `site/`의 buildless HTML/CSS입니다. 조종 API·장비 인증 정보·기록 데이터를 포함하지 않습니다. 설치 포털과 로봇의 `http://192.168.4.1:8090` 로컬 앱은 별개입니다.
 
-공개 설치 포털: https://lekiwi.psj22037540.chatgpt.site
+공개 설치 포털: https://seungjin-02.github.io/xlerobot/
 
-호스팅은 Sites이며 GitHub의 `site/` 파일을 정적 배포합니다. GitHub Pages는 아직 활성화하지 않았습니다. Pages로 이전하려면 저장소 Settings → Pages에서 GitHub Actions를 선택하고 `.github/workflows/pages.yml`을 수동 실행합니다. 다른 호스팅으로 옮겨도 로봇 앱·PC 도우미·Git 배포 출처는 변경할 필요가 없습니다.
+호스팅은 GitHub Pages이며 GitHub의 `site/` 파일만 정적 배포합니다. 저장소 Settings → Pages의 Source는 GitHub Actions입니다. `.github/workflows/pages.yml`은 main에 `site/**` 또는 workflow 파일 변경이 들어오면 자동 실행되며, main에서 수동 재실행도 가능합니다. feature 브랜치에서는 게시하지 않습니다. 로봇 앱·PC 도우미·Git 배포 출처는 변경하지 않습니다.
 
-포털 변경은 GitHub feature→테스트→PR→main 절차로 검토한 뒤 `site/` 파일과 같은 상태를 다시 게시합니다. 호스팅 설정·배포 자격 증명·개별 로봇 설정은 GitHub 앱 소스에 넣지 않습니다.
+기존 Sites 주소 https://jean-lekiwi.psj22037540.chatgpt.site 는 이전 기간에 유지합니다. 주 안내 주소는 GitHub Pages이며 기존 Sites는 자동 동기화 대상이 아닙니다.
+
+포털 변경은 GitHub feature→테스트→PR→main 절차로 검토한 뒤 Pages workflow가 자동 게시합니다. 게시 성공은 Actions의 Pages deployment 결과와 실제 페이지에서 확인합니다. 호스팅 설정·배포 자격 증명·개별 로봇 설정은 GitHub 앱 소스에 넣지 않습니다.
 
 ## 공개 전후 점검과 한계
 
-현재 Git 전체 이력은 4개 커밋입니다. 도달 가능한 blob 및 보관 ZIP 내부를 포함해 토큰·개인키·인증 URL 패턴과 설정/PIN/AP 관련 필드를 검사하고 외부 드라이버 출처·라이선스 고지를 검토했습니다. 테스트용 값과 설치 기본값은 실제 개별 기기의 비밀 백업과 구분합니다. 패턴 검사 통과를 비밀 누락이 절대 없다는 보장이나 포괄적 법률 감사로 표현하지 않습니다.
+원본 Public 전환 당시 검사한 Git 이력은 4개 커밋이었습니다. 도달 가능한 blob 및 보관 ZIP 내부를 포함해 토큰·개인키·인증 URL 패턴과 설정/PIN/AP 관련 필드를 검사하고 외부 드라이버 출처·라이선스 고지를 검토했습니다. 테스트용 값과 설치 기본값은 실제 개별 기기의 비밀 백업과 구분합니다. 패턴 검사 통과를 비밀 누락이 절대 없다는 보장이나 포괄적 법률 감사로 표현하지 않습니다.
 
 공개 이력에 기기 이름·사설 IP·USB 포트 경로와 과거 검증 증거가 있습니다. SSH 자격 증명·실제 설정 파일·실물 기록 백업은 이번 변경에 포함하지 않습니다. 실제 기기의 PIN/AP 암호가 문서의 기본값이나 테스트 예시와 같다면 관리자가 별도로 변경해야 합니다. 자동 업데이트 도우미가 이를 임의로 변경하지는 않습니다.
 

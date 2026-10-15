@@ -1,5 +1,10 @@
-name: Installation portal (manual deployment)
+name: Installation portal (GitHub Pages)
 on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 permissions:
   contents: read
@@ -7,9 +12,10 @@ permissions:
   id-token: write
 concurrency:
   group: installation-pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
