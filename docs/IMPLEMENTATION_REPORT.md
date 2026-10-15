@@ -1,5 +1,7 @@
 # LeKiwi Control Center Phase 1 개발 결과
 
+**추가 보완:** 2026-10-15 제공된 개발 지시서 전체에 따른 구현·충돌·미완료 상태는 [REQUIREMENTS.md](REQUIREMENTS.md)에 재구성했습니다. 원본 Public 전환과 공개 포털은 [PUBLICATION.md](PUBLICATION.md)를 확인하세요. 아래 본문은 PR #1 개발 시점의 결과입니다.
+
 ## 1. 기준과 구조
 
 원격 main `a67415b3a60b5b3127fdd8b2d1bb58726dbdf67c`을 확인하고 `feature/lekiwi-control-center`에서 개발했습니다. 기존 PIN/쿠키·단일 조종자·lease/seq·속도/가속 제한·ROS `/cmd_vel`·카메라8080·EpisodeRecorder·LeRobot 변환 구조를 분석한 뒤 재사용했습니다. [분석과 최종 아키텍처](CONTROL_CENTER.md)에 계약과 변경 이유를 정리했습니다.

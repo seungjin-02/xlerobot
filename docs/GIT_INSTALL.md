@@ -1,6 +1,6 @@
 # Git 기반 최초 설치와 PC 도우미
 
-이 절차는 최초 설치용입니다. 기존 설치에는 [수동 업데이트](UPDATE.md)를 사용하세요. 현재 원본은 Private이며 검증된 릴리스 태그가 없으므로, 아래 자리표시자는 관리자가 승인·검증한 실제 태그와 전체 커밋으로 대체해야 합니다. 이 변경의 깨끗한 Pi 전체 설치는 아직 미검증입니다.
+이 절차는 최초 설치용입니다. 기존 설치에는 [수동 업데이트](UPDATE.md)를 사용하세요. 현재 원본은 Public이며 인증 없이 Git으로 읽을 수 있습니다. 검증된 릴리스 태그는 없으므로, 아래 자리표시자는 관리자가 승인·검증한 실제 태그와 전체 커밋으로 대체해야 합니다. 이 변경의 깨끗한 Pi 전체 설치는 아직 미검증입니다.
 
 ## 연결과 사전 준비
 
@@ -9,7 +9,7 @@
 1. 공유기 Ethernet(권장), 노트북 Wi-Fi→Ethernet 인터넷 공유, 또는 Pi의 기존 Wi-Fi로 인터넷을 제공합니다. 랜선 연결은 인터넷 공유 활성화를 뜻하지 않습니다. Ubuntu NetworkManager는 유선 IPv4 “다른 컴퓨터와 공유”, Windows는 어댑터 인터넷 연결 공유, macOS는 시스템 설정의 인터넷 공유를 확인하세요. 실제 메뉴·게이트웨이·DHCP 주소를 확인하며 10.42.0.x를 고정 가정하지 않습니다.
 2. Pi의 실제 주소와 SSH 호스트 키를 확인합니다. `ssh USER@PI_ADDRESS`로 접속하며 root는 사용하지 않습니다. 자동으로 호스트 키 검사를 끄거나 known_hosts를 지우지 않습니다.
 3. Pi에서 `sudo apt-get update && sudo apt-get install git python3-yaml`을 실행합니다. Ubuntu 기본 Python3.12, iproute2, sudo, systemd, Bash가 필요합니다. PC에서 `.venv-assistant`를 만들고 `python -m pip install PyYAML==6.0.3`을 실행합니다. PyYAML은 기존 저장소의 프로필 검증 의존성입니다. QR은 Pi의 기존 python3-qrcode 설치를 재사용하므로 PC의 추가 QR 라이브러리는 필요 없습니다.
-4. Private 저장소는 **Pi 자체**의 Git 읽기 인증도 준비합니다. OS의 Git 자격 증명 관리자를 사용하고 토큰을 URL/명령 인자/설정 문서/로그에 넣지 않습니다. PC의 키나 클라우드 Git 프록시 인증을 Pi로 복사하지 않습니다. PC와 Pi에서 각각 `git ls-remote https://github.com/seungjin-02/xlerobot.git HEAD`를 확인합니다.
+4. 현재 공개 원본은 PC와 Pi 모두 인증 없이 읽습니다. 조직 정책으로 Private 배포 출처를 사용하는 경우에는 **Pi 자체**의 Git 읽기 인증도 준비합니다. OS의 Git 자격 증명 관리자를 사용하고 토큰을 URL/명령 인자/설정 문서/로그에 넣지 않습니다. PC의 키나 클라우드 Git 프록시 인증을 Pi로 복사하지 않습니다. PC와 Pi에서 각각 `git ls-remote https://github.com/seungjin-02/xlerobot.git HEAD`를 확인합니다.
 5. Pi에서 `ip -br address`, `ip route show default`, `getent hosts github.com`을 확인합니다. GitHub HTTPS/Git, Ubuntu ports와 ROS 설치용 GitHub API·release assets·packages.ros.org 접근이 필요합니다. apt의 실제 저장소 설정에 따른 목적지도 허용해야 합니다. 도우미 사전 검사는 게이트웨이·DNS·Git 태그 읽기·Ubuntu/ROS bootstrap HTTPS를 검사하며 모든 apt 패키지의 가용성을 보증하지 않습니다.
 
 AP나 PC 공유 설정은 도우미가 자동 변경하지 않습니다. 특히 Pi의 같은 Wi-Fi 장치를 클라이언트에서 AP로 바꾸면 SSH가 끊길 수 있어 Ethernet으로 진행하는 것이 좋습니다. 설치기는 기존 NetworkManager AP 구성을 재사용하거나 새 구성을 등록하지만 도우미는 `--activate-ap`를 전달하지 않습니다. 현재 연결이 절대 유지된다고 보장하지 않습니다.

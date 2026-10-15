@@ -1,5 +1,7 @@
 # LeKiwi Control Center — Phase 1 분석·구현
 
+**현재 상태:** 사용자가 2026-10-15 원본을 Public으로 전환했습니다. 아래 공개 배포 비교는 최초 설계 당시의 판단 기록입니다. 현재 출처·포털은 [PUBLICATION.md](PUBLICATION.md), 제공된 개발 지시서 기준 추적은 [REQUIREMENTS.md](REQUIREMENTS.md)를 따릅니다.
+
 ## 출발점과 최종 구조
 
 분석 기준은 원격 main `a67415b3a60b5b3127fdd8b2d1bb58726dbdf67c`입니다. 기존 구조를 재사용했습니다.
