@@ -10,6 +10,7 @@ import pwd
 import platform
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 
@@ -18,6 +19,7 @@ sys.path.insert(0,str(ROOT/'updater'))
 from common import SHA, UpdateError, atomic_json, snapshot, switch_link
 from engine import Runtime
 from releases import Releases
+from network import lan_address, verify_certificate_ip
 
 
 def escape(value):
@@ -98,10 +100,17 @@ def main():
     parser.add_argument('--signer',action='append',required=True,help='trusted primary GPG fingerprint')
     parser.add_argument('--public-key',type=Path,required=True)
     parser.add_argument('--motor-power-isolated',action='store_true')
+    parser.add_argument('--admin-address', help='optional fixed private IPv4 for mobile HTTPS admin')
+    parser.add_argument('--tls-cert', type=Path, help='certificate with admin IPv4 in subjectAltName')
+    parser.add_argument('--tls-key', type=Path, help='matching private TLS key; copied root-only')
     parser.add_argument('--apply',action='store_true',help='without this, validate and show plan only')
     args=parser.parse_args()
     if not re.fullmatch(r'[a-z_][a-z0-9_-]*',args.robot_user) or not SHA.fullmatch(args.baseline_commit):
         raise SystemExit('Invalid user or baseline commit.')
+    mobile = any((args.admin_address, args.tls_cert, args.tls_key))
+    if mobile and not all((args.admin_address, args.tls_cert, args.tls_key)):
+        raise SystemExit('Mobile admin requires --admin-address, --tls-cert and --tls-key together.')
+    address = lan_address(args.admin_address) if mobile else None
     account=pwd.getpwnam(args.robot_user)
     if account.pw_uid==0: raise SystemExit('Robot runtime must not be root.')
     config=args.config.expanduser().resolve()
@@ -121,6 +130,9 @@ def main():
     plan=units(args.robot_user,home,config,paths['recordings'],cameras)
     print('Plan: root-owned executor, dedicated Git worker, sandboxed system phone/camera units.')
     print('Preserves existing PIN/AP/profile and recordings; changes service ownership and code layout.')
+    if address:
+        plan['lekiwi-phone.service'] = plan['lekiwi-phone.service'].replace('[Service]\n', '[Service]\nEnvironment=LEKIWI_ADMIN_URL=https://'+address+':8093\n')
+        print('Mobile administrator HTTPS:', 'https://'+address+':8093', '(phone must trust the certificate)')
     print('GPG signer count:',len(args.signer),'automatic OS/driver/schema changes: disabled')
     if not args.apply: return
     if os.geteuid()!=0 or not args.motor_power_isolated or not sys.stdin.isatty():
@@ -131,6 +143,14 @@ def main():
     root=Path('/var/lib/lekiwi-updater');install=Path('/usr/local/lib/lekiwi-updater');settings=Path('/etc/lekiwi-updater')
     if any(p.exists() for p in (root,install,settings)):
         raise SystemExit('Existing managed installation: preserve it and use manual maintenance.')
+    if mobile:
+        if not shutil.which('openssl'): raise SystemExit('Mobile TLS requires openssl.')
+        for path in (args.tls_cert, args.tls_key):
+            if path.is_symlink() or not path.is_file(): raise SystemExit('Use regular TLS certificate/key files.')
+        if args.tls_key.stat().st_mode & 0o077: raise SystemExit('TLS key must be private (chmod 600).')
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(args.tls_cert, args.tls_key)
+        verify_certificate_ip(args.tls_cert, address)
     for program in ('git','gpg','setpriv','systemctl','runuser','useradd'):
         if not shutil.which(program): raise SystemExit('Missing system prerequisite: '+program)
     # Verify the baseline using the robot account; never invoke repo-configured programs as root.
@@ -185,6 +205,11 @@ def main():
     switch_link(root/'current',root/'releases'/args.baseline_commit)
     policy={'root':str(root),'cache':str(source.cache),'keyring':str(keyring),'trusted_fingerprints':args.signer,
         'worker_uid':fetcher.pw_uid,'worker_gid':fetcher.pw_gid,'config_file':str(config),'snapshot_paths':{k:str(v) for k,v in paths.items()}}
+    if mobile:
+        policy['admin_address'] = address
+        for tls_source, name in ((args.tls_cert, 'admin-cert.pem'), (args.tls_key, 'admin-key.pem')):
+            target = settings/name
+            target.write_bytes(tls_source.read_bytes()); target.chmod(0o600)
     atomic_json(settings/'policy.json',policy)
     salt=os.urandom(16)
     atomic_json(settings/'admin.json',{'salt':salt.hex(),'hash':hashlib.scrypt(password.encode(),salt=salt,n=16384,r=8,p=1).hex()})

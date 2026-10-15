@@ -268,9 +268,18 @@ async function refreshSystem() {
     }
     const update=data.updates;
     $('updateState').textContent=update?.enabled ? `${update.blocked ? '조종·기록 차단 · ' : ''}${known(update.phase)}${update.error ? ' · '+update.error : ''}` : '관리자 업데이트 서비스가 아직 설치되지 않았습니다.';
+    const adminLink = $('updateOpen');
+    adminLink.hidden = true; adminLink.removeAttribute('href');
+    if (update?.enabled && /^https:\/\/(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+):8093$/.test(update.admin_url || '')) {
+      adminLink.href = update.admin_url; adminLink.hidden = false;
+      $('updateHelp').textContent = '휴대폰에서 관리자 로그인 후 검증된 최신 버전을 적용합니다. 백업·적용·복구는 로봇이 수행합니다.';
+    } else {
+      $('updateHelp').textContent = update?.enabled ? '모바일 업데이트가 설정되지 않았습니다. 기존 SSH 터널 관리자 화면을 사용하세요.' : '기존 기기는 먼저 관리자 업데이트 서비스를 한 번 설정해야 합니다.';
+    }
     $('systemState').textContent = '마지막 조회 ' + new Date().toLocaleTimeString() + ' · 설치 정보 최대 5초 캐시';
   } catch (error) {
     $('systemInfo').replaceChildren();
+    $('updateOpen').hidden = true; $('updateOpen').removeAttribute('href');
     $('systemState').textContent = '확인 실패: ' + error.message;
     if (error.status === 401) await refresh();
   } finally { systemLoading = false; $('systemRefresh').disabled = false; }

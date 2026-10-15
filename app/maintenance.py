@@ -30,9 +30,11 @@ class Maintenance:
             raise ControlError('업데이트 잠금을 확인할 수 없어 조종을 차단했습니다') from None
 
     def status(self):
+        admin_url = os.environ.get('LEKIWI_ADMIN_URL')
+        extra = {'admin_url': admin_url} if admin_url else {}
         try:
             value = json.loads((self.root/'status.json').read_text())
-            return {'enabled':True, 'blocked':(self.root/'maintenance.json').exists(),
+            return {**extra, 'enabled':True, 'blocked':(self.root/'maintenance.json').exists(),
                 **{k:value.get(k) for k in ('phase','tag','commit','updated_at','error')}}
         except (OSError, ValueError):
-            return {'enabled':self.required, 'blocked':self.required, 'phase':'unknown' if self.required else 'not_configured'}
+            return {**extra, 'enabled':self.required, 'blocked':self.required, 'phase':'unknown' if self.required else 'not_configured'}

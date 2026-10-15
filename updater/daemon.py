@@ -18,6 +18,7 @@ import time
 from common import UpdateError
 from engine import Engine, Runtime
 from releases import Releases
+from network import lan_address, tls_context
 
 class Admin:
     def __init__(self, engine, password_hash, salt):
@@ -66,7 +67,11 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass  # Never log credentials, cookies, requests or Git stderr.
 
     def valid_host(self):
-        return self.headers.get('Host') in ('127.0.0.1:8093', 'localhost:8093')
+        return self.headers.get('Host') in getattr(self.server, 'allowed_hosts', ('127.0.0.1:8093', 'localhost:8093'))
+
+    def cookie(self, token, age):
+        secure = '; Secure' if getattr(self.server, 'secure_admin', False) else ''
+        return f'lekiwi_admin={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={age}{secure}'
 
     def reply(self, status, value, cookie=None):
         body=json.dumps(value).encode()
@@ -99,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
-            if not self.valid_host() or self.headers.get('Origin')!='http://'+self.headers.get('Host',''):
+            if not self.valid_host() or self.headers.get('Origin')!=('https://' if getattr(self.server, 'secure_admin', False) else 'http://')+self.headers.get('Host',''):
                 return self.reply(403,{'error':'invalid_origin'})
             if self.headers.get('Content-Type','').split(';')[0]!='application/json': return self.reply(415,{'error':'json_required'})
             length=int(self.headers.get('Content-Length','0'))
@@ -111,12 +116,12 @@ class Handler(BaseHTTPRequestHandler):
             if self.path=='/api/login':
                 if set(data)!={'password'}: raise UpdateError('invalid_request')
                 token=admin.login(data['password'])
-                return self.reply(200,{'ok':True},f'lekiwi_admin={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=900')
+                return self.reply(200,{'ok':True},self.cookie(token, 900))
             token=admin.authenticated(self.headers.get('Cookie',''))
             if not token: return self.reply(401,{'error':'administrator_login_required'})
             if self.path=='/api/logout':
                 with admin.lock: admin.sessions.pop(token,None)
-                return self.reply(200,{'ok':True},'lekiwi_admin=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
+                return self.reply(200,{'ok':True},self.cookie('', 0))
             if self.path=='/api/releases' and not data:
                 if not admin.engine.mutex.acquire(blocking=False): raise UpdateError('update_busy')
                 try: result=admin.engine.sources.list(admin.engine.baseline())
@@ -170,7 +175,16 @@ def main():
     if credential_path.is_symlink() or credential_path.stat().st_uid!=0 or credential_path.stat().st_mode & 0o077:
         raise SystemExit('Administrator credentials must be root-owned 0600.')
     credentials=json.loads(credential_path.read_text())
-    server=AdminServer(('127.0.0.1',8093))
+    address = policy.get('admin_address')
+    context = None
+    if address:
+        address = lan_address(address)
+        context = tls_context('/etc/lekiwi-updater/admin-cert.pem', '/etc/lekiwi-updater/admin-key.pem')
+    server=AdminServer((address or '127.0.0.1',8093))
+    if context:
+        server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+        server.allowed_hosts = (address+':8093',)
+        server.secure_admin = True
     server.daemon_threads=True
     server.admin=Admin(engine,credentials['hash'],credentials['salt'])
     notify=os.environ.get('NOTIFY_SOCKET')

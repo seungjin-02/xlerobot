@@ -61,3 +61,7 @@ NODE_PATH="$PWD/.local/browser/node_modules" node tests/browser_smoke.cjs
 첫 로봇: 카메라 timestamp/JPEG, 인증UI, 자동시작 설정 확인. 두 번째: Ubuntu24.04/Jazzy, 소스 새 빌드, AP와자동시작, 두 카메라640x480 프레임수신, has_arm=true/front+wrist/armed=false 응답 확인. 사용자가 두 번째 실물 주행 정상이라고 확인했으나 자동 실물 주행/속도 측정을 실행하지 않았음.
 
 미검증 항목은 HANDOFF.md에 정리했습니다. evidence JSON은 그 시점 결과이며 지속적인 건강 상태를 보장하지 않습니다. evidence screenshot은 합성/과거 화면이며 최신 카메라 선택 화면의 증거가 아닙니다.
+
+## 모바일 업데이트 버튼 추가 검사
+
+Python 128개(제어 26 + 일반/업데이트 102), Chromium 19개(기존/시스템 링크 11 + 관리자 8)를 검사합니다. 실제 임시 HTTPS 서버에서 별도 로그인·Secure 쿠키·HTTPS Origin/Host 제한·로그아웃을 검증하고 합성 브라우저에서 자동 안정 버전 선택·빈 후보·오프라인 후보 해제를 확인합니다. 휴대폰 인증서 신뢰·실물 AP/인터넷·root 전환·실제 릴리스 배포는 미검증입니다.
