@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-15",
+  "main_source": "e9c020f0ec6b5a0e593b5636ae5c87bacbacc53d",
+  "slam_source": "09261377908204d2f482e2ae4dd2650d3cdce9d4",
+  "presentation_only": true,
+  "robot_connected": false,
+  "runtime_dependencies": "None; static HTML/CSS/JS and local PNG assets",
+  "browser": "System Chromium, Playwright",
+  "desktop_viewport": [
+    1440,
+    960
+  ],
+  "mobile_viewport": [
+    390,
+    844
+  ],
+  "checks": {
+    "desktop_slides": 14,
+    "mobile_slides": 14,
+    "horizontal_overflow": false,
+    "missing_images": 0,
+    "javascript_exceptions": 0,
+    "version_switch": "passed",
+    "screenshot_zoom": "passed",
+    "timeline_scrub_and_pause": "passed",
+    "keyboard_navigation": "passed",
+    "standalone_embedded_assets": "passed",
+    "both_version_videos_recorded": true
+  },
+  "notes": [
+    "Concept animation does not run ROS, SLAM, Nav2 or motor commands",
+    "Real app screenshots are from demo mode",
+    "Synthetic map came from the separately validated actual SLAM run",
+    "No remote publication or main merge"
+  ]
+}
