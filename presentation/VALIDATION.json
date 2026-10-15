@@ -64,5 +64,7 @@
     "No remote publication or main merge"
   ],
   "presentation_focus": "Product overview: browser/AP/ROS architecture, actual app UI, control/observation/recording/management; four self-guided screens",
-  "delivery_file": "LeKiwi-introduction-v2.html"
+  "delivery_file": "LeKiwi-introduction-v3.html",
+  "desktop_default_scale": 0.9,
+  "mobile_default_scale": 1
 }
