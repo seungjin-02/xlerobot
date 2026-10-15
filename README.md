@@ -2,7 +2,7 @@
 
 **LeKiwi 모바일 베이스**의 로컬 조종·주행 기록·읽기 전용 시스템 관리 도구입니다. 저장소 이름은 xlerobot입니다. Python/ROS 2와 순수 HTML/CSS/JavaScript를 유지하며 팔 제어·자동 주행·모델 학습·웹 자동 업데이트는 포함하지 않습니다.
 
-Phase 1에서 세 화면 UI, Git 태그/커밋 표시, SSH/Git 최초 설치 도우미, 정적 설치 포털과 수동 업데이트 절차를 추가했습니다. [분석·구조·공개 배포 검토](docs/CONTROL_CENTER.md), [검증 범위](docs/VERIFICATION.md)를 확인하세요. 현재 원본은 Private이며 검증된 릴리스 태그·공개 사이트는 아직 없습니다. 공개 상태·원격 설정·릴리스는 이번 개발에서 변경하지 않았습니다.
+Phase 1에서 세 화면 UI, Git 태그/커밋 표시, SSH/Git 최초 설치 도우미, 정적 설치 포털과 수동 업데이트 절차를 추가했습니다. [분석·구조·공개 배포 검토](docs/CONTROL_CENTER.md), [검증 범위](docs/VERIFICATION.md)를 확인하세요. 현재 원본은 Public이며 인증 없이 Git으로 읽을 수 있습니다. 검증된 운영 릴리스 태그는 아직 없습니다. 공개 설치 안내와 미완료 검증은 [요구사항별 상태](docs/REQUIREMENTS.md)를 확인하세요. 공개 열람과 사용·재배포 라이선스는 별개이며 [고지](LICENSE-NOTICE.md)를 유지합니다.
 
 폰 브라우저 ↔ 르키위 Wi-Fi AP ↔ 라즈베리파이 웹 서버 ↔ ROS 2 바퀴 드라이버로 동작합니다. 설치 후 노트북·랜선·인터넷 없이 조종합니다. 안드로이드에서 실제 작동 확인, 아이폰 실기기 검증은 미완료입니다.
 
@@ -15,7 +15,7 @@ Phase 1에서 세 화면 UI, Git 태그/커밋 표시, SSH/Git 최초 설치 도
 5. 문제 발생: [문제 해결·복구](docs/TROUBLESHOOTING.md).
 6. 검증·버전: [검증 범위](docs/VERIFICATION.md), [구조](docs/ARCHITECTURE.md), `evidence/`.
 7. 기존 설치 업데이트: [태그 검증·백업·설치 재실행·복구](docs/UPDATE.md).
-8. 공개 포털 소스: `site/`와 수동 GitHub Pages workflow. 승인·배포 전용 설정이 필요하며 아직 게시하지 않았습니다.
+8. [공개 설치 안내](https://lekiwi-control-center-install.psj22037540.chatgpt.site) · 공개 포털 소스: `site/`와 수동 GitHub Pages workflow. Sites에 정적 게시하며 GitHub Pages workflow도 유지합니다.
 
 ## 빠른 설치 — 로봇에서 실행
 
