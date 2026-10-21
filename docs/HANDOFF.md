@@ -2,7 +2,7 @@
 
 ## SLAM 기록·지도·Nav2 변경 인수인계
 
-최신 main `e9c020f` 기준 `feature/slam-recording`에 추가한 검토용 변경은 [SLAM_HANDOFF.md](SLAM_HANDOFF.md), [SLAM_IMPLEMENTATION_REPORT.md](SLAM_IMPLEMENTATION_REPORT.md)를 확인하세요. 사용자 요청에 따라 로컬 커밋만 남기며 main 병합/원격 푸시를 하지 않습니다. 실물과 연결하지 않았고 모든 새 ROS 지도·목표 추종 증거는 합성 센서·가상 모터입니다. 나중에 Ubuntu 로컬 Codex에서 실물 설정을 확인하고 검토·병합·배포해야 합니다.
+main `e9c020f`를 기준으로 개발한 SLAM 원본 기록·지도·Nav2 도구와 소개 자료는 `feature/slam-recording`에 있습니다. 2026-10-21 사용자 요청으로 원격 PR과 main 통합을 진행합니다. 초기의 “로컬 커밋만 유지” 지시는 이 요청으로 대체됩니다. [SLAM_HANDOFF.md](SLAM_HANDOFF.md), [SLAM_IMPLEMENTATION_REPORT.md](SLAM_IMPLEMENTATION_REPORT.md)를 확인하세요. 기기 배포·릴리스는 이번 통합에 포함하지 않습니다. 실제 장비는 연결하지 않았으며 ROS 지도·목표 추종 증거는 합성 센서·가상 모터입니다.
 
 ## Control Center Phase 1 개발
 
