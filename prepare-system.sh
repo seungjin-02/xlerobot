@@ -25,7 +25,8 @@ PY
 fi
 sudo apt-get install -y ros-jazzy-ros-base ros-jazzy-rclpy ros-jazzy-tf2-ros \
     python3-colcon-common-extensions python3-yaml python3-opencv python3-pil python3-qrcode \
-    build-essential cmake network-manager iw
+    build-essential cmake network-manager iw \
+    ros-jazzy-rosbag2-py ros-jazzy-rosbag2-storage-default-plugins
 sudo usermod -aG dialout,video "$(id -un)"
 sudo loginctl enable-linger "$(id -un)"
 echo '시스템 준비 완료. 새 그룹 권한 적용을 위해 설치 완료 후 1회 재부팅하세요.'

@@ -82,6 +82,15 @@ class HttpTests(unittest.TestCase):
         with Image.open(io.BytesIO(self.request('/api/camera/demo.jpg'))) as frame:
             self.assertEqual(frame.size, (640,480)); frame.verify()
 
+    def test_slam_record_request_rejects_demo_and_invalid_mode(self):
+        self.pair();self.data('/api/arm',{})
+        self.assertFalse(self.data('/api/status')['recording']['slam']['available'])
+        for selected in (True,'yes'):
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self.data('/api/record/start',{'task':'map','slam':selected})
+            self.assertEqual(error.exception.code,409)
+        self.assertFalse(self.data('/api/status')['recording']['active'])
+
     def test_read_only_idle_check_rejects_active_control(self):
         self.assertTrue(idle_status('12345678', self.base)['demo'])
         self.pair(); self.data('/api/arm', {})

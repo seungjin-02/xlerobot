@@ -1,0 +1,21 @@
+{
+  "synthetic": true,
+  "physics_simulation": false,
+  "physical_hardware_tested": false,
+  "actual_nav2_goal_status": 4,
+  "goal_map_x": 0.6,
+  "final_odom_pose": [
+    0.4875315005266846,
+    -0.03670182203569674,
+    -0.06120640383913129
+  ],
+  "peak_guarded_linear_m_s": 0.1,
+  "motor_output_after_stop": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "motor_ready_after_stop": false,
+  "cmd_vel_bypass_publishers": 0,
+  "nav2_nodes_activated": 7
+}

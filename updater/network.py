@@ -32,8 +32,11 @@ def tls_context(cert, key):
 
 
 def verify_certificate_ip(cert, address):
-    # openssl x509 -checkip exits zero even on mismatch; inspect its explicit result.
-    result = subprocess.run(['openssl', 'x509', '-in', str(cert), '-noout', '-checkip', address],
-        check=True, capture_output=True, text=True, env={**os.environ, 'LC_ALL':'C'}, timeout=10)
-    if result.stdout.strip() != 'IP '+address+' does match certificate':
+    # OpenSSL 3.0 and 3.5 differ on mismatch exit status. Both must fail closed.
+    try:
+        result = subprocess.run(['openssl', 'x509', '-in', str(cert), '-noout', '-checkip', address],
+            check=False, capture_output=True, text=True, env={**os.environ, 'LC_ALL':'C'}, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        raise UpdateError('certificate_check_failed') from None
+    if result.returncode != 0 or result.stdout.strip() != 'IP '+address+' does match certificate':
         raise UpdateError('certificate_ip_mismatch')

@@ -1,5 +1,9 @@
 # 검증 범위
 
+## SLAM 검토 브랜치 — 2026-10-15 클라우드
+
+Python **154개**(제어26 + tests128), Chromium **20개 시나리오**(일반12 + 관리자8), 문법/컴파일/의존성 검사가 통과했습니다. 실제 Jazzy rosbag2 → SLAM Toolbox → 지도/pose graph → Nav2 목표 도착을 **합성 센서·가상 모터**로 검증했습니다. 실제 장소 지도와 실물 주행은 미검증입니다. 상세 실행 결과는 [검증 JSON](../evidence/slam/verification.json), 구현/한계는 [SLAM 보고서](SLAM_IMPLEMENTATION_REPORT.md)를 따릅니다.
+
 ## Phase 2 검토 브랜치
 
 신규 구현·시험별 실제/모의 구분과 실물 미검증 범위는 [PHASE2.md](PHASE2.md)에 기록합니다. Phase 2는 실물 장비 미적용이며 운영 릴리스 검증 완료 기록을 만들지 않습니다.

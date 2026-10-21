@@ -50,6 +50,12 @@ async function main() {
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.screenshot({path:path.join(artifacts,'drive-mobile.png'),fullPage:true});
     passed.push('PIN, demo camera, mobile layout');
+    await page.locator('nav [data-screen="record"]').click();
+    await page.locator('#screen-record').waitFor({state:'visible'});
+    assert.equal(await page.locator('#recordSlam').isDisabled(),true);
+    assert.match(await page.locator('#slamState').innerText(),/실제 ROS 2/);
+    await page.locator('nav [data-screen="drive"]').click();
+    passed.push('SLAM UI rejects invented sensors in demo mode');
 
     await page.locator('#arm').click();await waitFor(async()=>(await status()).armed,'arm');
     await page.locator('[data-dir="forward"]').click();

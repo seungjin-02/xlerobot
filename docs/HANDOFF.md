@@ -1,5 +1,9 @@
 # 다른 PC에서 이어가기
 
+## SLAM 기록·지도·Nav2 변경 인수인계
+
+main `e9c020f`를 기준으로 개발한 SLAM 원본 기록·지도·Nav2 도구와 소개 자료는 `feature/slam-recording`에 있습니다. 2026-10-21 사용자 요청으로 원격 PR과 main 통합을 진행합니다. 초기의 “로컬 커밋만 유지” 지시는 이 요청으로 대체됩니다. [SLAM_HANDOFF.md](SLAM_HANDOFF.md), [SLAM_IMPLEMENTATION_REPORT.md](SLAM_IMPLEMENTATION_REPORT.md)를 확인하세요. 기기 배포·릴리스는 이번 통합에 포함하지 않습니다. 실제 장비는 연결하지 않았으며 ROS 지도·목표 추종 증거는 합성 센서·가상 모터입니다.
+
 ## Control Center Phase 1 개발
 
 최신 작업은 feature/lekiwi-control-center 브랜치입니다. [설계·공개 배포 검토](CONTROL_CENTER.md), [Git 최초 설치](GIT_INSTALL.md), [수동 업데이트·복구](UPDATE.md), [새 검증 범위](VERIFICATION.md)를 먼저 확인하세요. 조종/기록/시스템 UI·PC SSH 도우미·정적 포털을 추가했으며 새 실물 설치나 공개 배포는 수행하지 않았습니다. 아래 2026-10-14 장비 기록은 과거 이력이며 이번 변경의 배포/실물 검증을 뜻하지 않습니다.

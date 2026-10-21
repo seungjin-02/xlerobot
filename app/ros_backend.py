@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 class RosBackend:
-    def __init__(self, profile, workspace=None):
+    def __init__(self, profile, workspace=None, node_name='lekiwi_phone_control'):
         import rclpy
         from geometry_msgs.msg import Twist
         from nav_msgs.msg import Odometry
@@ -14,7 +14,7 @@ class RosBackend:
         from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
         self.rclpy, self.Twist, self.SetBool = rclpy, Twist, SetBool
         rclpy.init()
-        self.node = rclpy.create_node('lekiwi_phone_control')
+        self.node = rclpy.create_node(node_name)
         self.pub = self.node.create_publisher(Twist, '/cmd_vel', 1)
         self.client = self.node.create_client(SetBool, '/motor_power')
         self.ready = None

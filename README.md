@@ -1,6 +1,10 @@
 # LeKiwi Control Center
 
-**LeKiwi 모바일 베이스**의 로컬 조종·주행 기록·읽기 전용 시스템 관리 도구입니다. 저장소 이름은 xlerobot입니다. Python/ROS 2와 순수 HTML/CSS/JavaScript를 유지하며 팔 제어·자동 주행·모델 학습·웹 자동 업데이트는 포함하지 않습니다.
+**LeKiwi 모바일 베이스**의 로컬 조종·주행 기록·시스템 관리 도구입니다. 저장소 이름은 xlerobot입니다. Python/ROS 2와 순수 HTML/CSS/JavaScript를 유지합니다. 팔 제어와 정책 학습 trainer는 포함하지 않습니다.
+
+## SLAM 기록·자율주행 검토용 구현
+
+기록 화면의 SLAM 옵션으로 LiDAR·odometry·TF·제공되는 IMU/관절/진단 등을 원본 rosbag으로 저장하고, Ubuntu PC에서 SLAM Toolbox 지도를 생성할 수 있도록 추가했습니다. 생성한 지도를 사용하는 AMCL/Nav2와 별도 저속·센서/명령 감시 중계기도 검토용으로 제공합니다. **실제 르키위/실내 공간에는 연결하지 않았으며, 합성 방 센서와 가상 모터를 이용한 소프트웨어 검증입니다.** 사용 전 [센서 설정·지도·자율주행 절차](docs/SLAM.md), [변경·검증 보고](docs/SLAM_IMPLEMENTATION_REPORT.md), [Ubuntu 로컬 인수인계](docs/SLAM_HANDOFF.md)를 확인하세요. Nav2 실행은 명시적인 `--enable-motion` 옵션이 있어야 하며, 웹에서 목표를 지정하는 기능이나 멀티모달 정책 학습은 포함하지 않습니다.
 
 Phase 1에서 세 화면 UI, Git 태그/커밋 표시, SSH/Git 최초 설치 도우미, 정적 설치 포털과 수동 업데이트 절차를 추가했습니다. [분석·구조·공개 배포 검토](docs/CONTROL_CENTER.md), [검증 범위](docs/VERIFICATION.md)를 확인하세요. 현재 원본은 Public이며 인증 없이 Git으로 읽을 수 있습니다. 검증된 운영 릴리스 태그는 아직 없습니다. 공개 설치 안내와 미완료 검증은 [요구사항별 상태](docs/REQUIREMENTS.md)를 확인하세요. 공개 열람과 사용·재배포 라이선스는 별개이며 [고지](LICENSE-NOTICE.md)를 유지합니다.
 
