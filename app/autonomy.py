@@ -64,12 +64,14 @@ class Autonomy:
     def busy(self):return self.thread is not None and self.thread.is_alive()
 
     def status(self,owner=None):
+        with self.health_lock:
+            sensor_health=self.health.report(time.monotonic()) if self.health else None
         return {'phase':self.phase,'busy':self.busy,'mine':self.busy and owner==self.owner,
                 'configured':self.calibration_error is None and not isinstance(self.backend,DemoBackend),
                 'blocked_reason':'실물 ROS 센서가 없는 데모에서는 자율주행을 시작하지 않습니다' if isinstance(self.backend,DemoBackend) else self.calibration_error,
                 'error':self.error,'recording_episode':self.episode,'mission':self.last_report,
                 'limits':getattr(self,'public_limits',None),'paused':self.paused,
-                'recording_required':False,'local_only':True}
+                'recording_required':False,'local_only':True,'sensor_health':sensor_health}
 
     def map_view(self):
         grid=self.grid
@@ -179,14 +181,16 @@ class Autonomy:
         from rclpy.qos import QoSProfile,ReliabilityPolicy,DurabilityPolicy
         import tf2_ros
         node=self.backend.node
-        self.tf=tf2_ros.Buffer();self.listener=tf2_ros.TransformListener(self.tf,node,spin_thread=False)
+        self.tf=tf2_ros.Buffer();self.listener=tf2_ros.TransformListener(self.tf,node,spin_thread=False,qos=QoSProfile(depth=5))
         self.client=ActionClient(node,NavigateToPose,'/navigate_to_pose');self.goal_type=NavigateToPose
         self.health=SensorHealth(sensor)
         def observe(topic,message):
             with self.health_lock:self.health.observe(topic,message)
         for topic in (sensor['scan_topic'],sensor['odom_topic'],'/tf','/tf_static'):
             static=topic=='/tf_static'
-            qos=QoSProfile(depth=100,reliability=ReliabilityPolicy.RELIABLE if static else ReliabilityPolicy.BEST_EFFORT,
+            # Keep the newest continuous sample. A deep queue can leave scan and
+            # odometry seconds apart while Nav2 starts on the Raspberry Pi.
+            qos=QoSProfile(depth=100 if static else 1,reliability=ReliabilityPolicy.RELIABLE if static else ReliabilityPolicy.BEST_EFFORT,
                 durability=DurabilityPolicy.TRANSIENT_LOCAL if static else DurabilityPolicy.VOLATILE)
             self.subscriptions.append(node.create_subscription(get_message(sensor['topics'][topic]),topic,lambda m,t=topic:observe(t,m),qos))
         def receive_map(message):
