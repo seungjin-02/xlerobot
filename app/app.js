@@ -1,4 +1,49 @@
 'use strict';
+let autonomyBusy=false, autonomyMapBusy=false, autonomyMapAt=0;
+function renderAutonomy(){
+  const a=status?.autonomy;
+  if(!$('autonomyStart'))return;
+  const busy=!!a?.busy, mine=!!a?.mine;
+  $('autonomyStart').disabled=!a?.configured || busy || !!status?.armed || !!status?.recording?.active || autonomyBusy || disconnected || !!status?.updates?.blocked;
+  $('autonomyPause').disabled=!mine || !!a?.paused || autonomyBusy;
+  $('autonomyResume').disabled=!mine || !a?.paused || autonomyBusy;
+  $('autonomyStop').disabled=!busy || autonomyBusy;
+  for(const id of ['autonomyTask','autonomyRadius','autonomyMinutes','autonomyCycles'])$(id).disabled=busy;
+  const names={idle:'대기',starting:'센서·SLAM·기록 준비 중',running:'자동 운행',stopping:'정지·기록 저장 중',fault:'오류'};
+  $('autonomyState').textContent=a?.error || a?.blocked_reason || (a?.paused?'일시정지':names[a?.phase]||'상태 확인 중');
+  const m=a?.mission;
+  const states={waiting:'준비',exploring:'미탐색 영역 탐색',patrolling:'순회',returning:'출발점 복귀',paused:'일시정지',complete:'완료',blocked:'경로 확보 불가',fault:'오류로 정지',stopped:'종료'};
+  const reasons={returned_home:'출발점 복귀 완료',operator_stop:'사용자 종료',return_failed:'복귀 경로 이동 실패',return_distance_reserve:'복귀 거리 확보',cancel_ack_timeout:'목표 취소 응답 시간 초과'};
+  $('autonomyProgress').textContent=m?`상태 ${states[m.state]||m.state} · 이동 ${Number(m.distance_m).toFixed(2)}m · 목표 ${m.goals_sent}개 · 완료 순회 ${m.cycles_finished}회${m.reason?' · '+(reasons[m.reason]||m.reason):''}`:'지도·좌표·센서가 준비되면 시작할 수 있습니다.';
+  if(busy){$('badge').textContent=a.paused?'자동 순회 일시정지':'자동 탐색·순회';$('controlSummary').textContent+=' · 자동 주행 및 원본 센서 기록';}
+  if(currentScreen==='autonomy' && !autonomyMapBusy && Date.now()-autonomyMapAt>1500)refreshAutonomyMap();
+}
+async function refreshAutonomyMap(){
+  autonomyMapBusy=true;autonomyMapAt=Date.now();
+  try{
+    const m=await api('autonomy/map',undefined,2500),canvas=$('autonomyMap');
+    canvas.hidden=!m.available;
+    if(!m.available){$('autonomyMapState').textContent='아직 생성된 실시간 지도가 없습니다.';return;}
+    const w=m.width,h=m.height;if(!Number.isInteger(w)||!Number.isInteger(h)||w<1||h<1||m.data.length!==w*h)return;
+    const image=document.createElement('canvas');image.width=w;image.height=h;const pix=image.getContext('2d').createImageData(w,h);
+    for(let i=0;i<m.data.length;i++){const v=m.data[i],j=((h-1-Math.floor(i/w))*w+i%w)*4,c=v<0?105:v>20?24:224;pix.data[j]=c;pix.data[j+1]=c;pix.data[j+2]=c;pix.data[j+3]=255;}
+    image.getContext('2d').putImageData(pix,0,0);canvas.width=640;canvas.height=Math.max(180,Math.round(640*h/w));
+    const ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.drawImage(image,0,0,canvas.width,canvas.height);
+    const point=p=>{const dx=p[0]-m.origin[0],dy=p[1]-m.origin[1],c=Math.cos(m.origin[2]),s=Math.sin(m.origin[2]);return [(c*dx+s*dy)/m.resolution/w*canvas.width,(h-(-s*dx+c*dy)/m.resolution)/h*canvas.height];};
+    ctx.strokeStyle='#175d9c';ctx.lineWidth=2;ctx.beginPath();(m.trail||[]).forEach((p,i)=>{const q=point(p);i?ctx.lineTo(...q):ctx.moveTo(...q);});ctx.stroke();
+    if(m.goal){const [x,y]=point(m.goal);ctx.strokeStyle='#9c3517';ctx.beginPath();ctx.moveTo(x-7,y);ctx.lineTo(x+7,y);ctx.moveTo(x,y-7);ctx.lineTo(x,y+7);ctx.stroke();}
+    if(m.pose){const [x,y]=point(m.pose);ctx.fillStyle='#175d9c';ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();}
+    $('autonomyMapState').textContent=`실시간 SLAM 지도 · 수신 ${Number(m.map_age_s).toFixed(1)}초 전${m.display_downsampled?' · 화면용 축소 표시':''}`;
+  }catch(e){$('autonomyMapState').textContent='지도 조회 실패: '+e.message;}finally{autonomyMapBusy=false;}
+}
+async function autonomyAction(action){
+  if(autonomyBusy)return;autonomyBusy=true;render();
+  try{
+    const body=action==='start'?{task:$('autonomyTask').value,max_radius:Number($('autonomyRadius').value),max_duration:Number($('autonomyMinutes').value)*60,cycles:Number($('autonomyCycles').value),max_distance:50}:{};
+    await api('autonomy/'+action,body,10000);await refresh();
+  }catch(e){message(e.message);}finally{autonomyBusy=false;render();}
+}
+document.addEventListener('DOMContentLoaded',()=>{for(const action of ['start','pause','resume','stop'])$('autonomy'+action[0].toUpperCase()+action.slice(1)).addEventListener('click',()=>autonomyAction(action));});
 const $ = id => document.getElementById(id);
 let lease = null, seq = 0, direction = 'idle', hold = null;
 let speed = 10 / 30, status = null, offset = 0, pairing = false, stopping = false;
@@ -28,9 +73,11 @@ function render() {
     b.setAttribute('aria-pressed', String(selected));
   });
   $('arm').disabled = maintenance || mine || !!status?.armed || stopping || preparing || arming || disconnected || document.hidden;
+  if(status?.autonomy?.busy)$('arm').disabled=true;
   $('arm').textContent = arming ? '준비 중…' : mine ? '조종 중' : '조종 시작';
   $('prepareBox').hidden = !status || status.demo || status.max_linear >= .89;
   $('prepare').disabled = maintenance || preparing || !!status?.armed || !!status?.motor_ready || !!status?.other_publishers;
+  if(status?.autonomy?.busy)$('prepare').disabled=true;
   $('prepare').textContent = preparing ? '고속 설정 준비 중…' : '폰 조종 고속 설정 적용';
   $('badge').textContent = disconnected ? '재연결 중' : status?.demo ? '시뮬레이션' : mine ? '조종 중' : status ? '연결됨' : '접속 대기';
   $('badge').classList.toggle('on', mine && !disconnected);
@@ -74,13 +121,14 @@ function render() {
     for(const ep of episodes.slice(0,5)){
       if(!ep.complete)continue;
       const row=document.createElement('div');row.className='episode-row';
-      const label=document.createElement('span');label.textContent=`${ep.task} · ${names[ep.outcome]||'미분류'} · ${ep.samples}프레임 · 학습 유효 ${ep.valid_samples||0}개`;
+      const label=document.createElement('span');label.textContent=`${ep.control_mode==='autonomous'?'자동 순회 · ':''}${ep.task} · ${names[ep.outcome]||'미분류'} · ${ep.samples}프레임 · 학습 유효 ${ep.valid_samples||0}개`;
       const link=document.createElement('a');link.textContent='다운로드';link.href='/api/record/'+encodeURIComponent(ep.episode_id)+'/download';
       row.append(label,link);$('episodes').append(row);
       if(ep.slam?.enabled){const quality=document.createElement('small');quality.textContent=ep.slam.valid_for_mapping?'SLAM 입력 검사 통과 · 오프라인 지도 생성 가능':'SLAM 불완전 · 센서/TF 확인 필요';row.append(quality);}
     }
   }
 
+  renderAutonomy();
 }
 function clearDirection() { direction = 'idle'; hold = null; render(); }
 function lostLease(reason) {
@@ -223,7 +271,7 @@ function bytes(value) {
   return Number.isFinite(value) ? `${(value / 1024**3).toFixed(2)} GiB` : '확인 불가';
 }
 async function showScreen(name) {
-  if (!['drive', 'record', 'system'].includes(name) || navigating || arming || preparing || stopping || recordBusy || name === currentScreen) return;
+  if (!['drive', 'record', 'autonomy', 'system'].includes(name) || navigating || arming || preparing || stopping || recordBusy || name === currentScreen) return;
   navigating = true; render();
   try {
     if (lease) {
@@ -235,7 +283,7 @@ async function showScreen(name) {
       }
     }
     currentScreen = name;
-    for (const screen of ['drive', 'record', 'system']) $('screen-' + screen).hidden = screen !== name;
+    for (const screen of ['drive', 'record', 'autonomy', 'system']) $('screen-' + screen).hidden = screen !== name;
     render();
     if (cameraOn && name !== 'drive') $('camera').removeAttribute('src');
     else if (cameraOn) loadCamera();

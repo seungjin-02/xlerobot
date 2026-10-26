@@ -48,7 +48,7 @@ def uniform_segments(rows, fps=20, min_frames=10):
         if len(resampled)>=min_frames:segments.append(resampled)
     return segments
 
-def export(root, destination, repo_id, include_failures=False, include_unfinished=False, allow_demo=False):
+def export(root, destination, repo_id, include_failures=False, include_unfinished=False, allow_demo=False, include_autonomous=False):
     import numpy as np
     from PIL import Image
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -56,6 +56,8 @@ def export(root, destination, repo_id, include_failures=False, include_unfinishe
     for episode in collect_episodes(root):
         meta=json.loads((episode/'episode.json').read_text())
         if not meta.get('complete'):skipped.append({'episode':episode.name,'reason':'incomplete'});continue
+        if meta.get('device_profile',{}).get('control_mode')=='autonomous' and not include_autonomous:
+            skipped.append({'episode':episode.name,'reason':'autonomous recording requires explicit selection'});continue
         outcome=meta.get('outcome')
         if outcome!='success' and not (include_failures and outcome=='failure') and not (include_unfinished and outcome in ('unfinished','interrupted')):
             skipped.append({'episode':episode.name,'reason':'outcome not selected'});continue
@@ -102,6 +104,7 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('records',type=Path);p.add_argument('--output',required=True,type=Path);p.add_argument('--repo-id',default='local/lekiwi-base-demos')
     p.add_argument('--include-failures',action='store_true');p.add_argument('--include-unfinished',action='store_true');p.add_argument('--allow-demo',action='store_true')
-    a=p.parse_args();r=export(a.records,a.output,a.repo_id,a.include_failures,a.include_unfinished,a.allow_demo)
+    p.add_argument('--include-autonomous',action='store_true',help='자동 주행 기록을 수동 시범과 구분해 명시적으로 포함')
+    a=p.parse_args();r=export(a.records,a.output,a.repo_id,a.include_failures,a.include_unfinished,a.allow_demo,a.include_autonomous)
     print(json.dumps({k:v for k,v in r.items() if k not in ('source_segments','skipped')},ensure_ascii=False,indent=2))
 if __name__=='__main__':main()

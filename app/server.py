@@ -50,10 +50,20 @@ class App:
                                         feed=DemoCameraFeed() if isinstance(backend,DemoBackend) else None,
                                         slam_config=slam_config,slam_supported=available(isinstance(backend,DemoBackend)))
         self.system_info = SystemInfo(ROOT.parent, self.recorder.root, isinstance(backend, DemoBackend))
+        from autonomy import Autonomy
+        self.autonomy = Autonomy(self, config)
 
     def record_sample(self):
         if not self.recorder.active: return
         with self.control.lock:
+            automatic = self.autonomy
+            if automatic.busy and automatic.guard and self.recorder.owner == automatic.owner:
+                guard=automatic.guard
+                age=(time.monotonic()-guard.received)*1000 if guard.received is not None else None
+                observation=self.control.backend.observation() if hasattr(self.control.backend,'observation') else None
+                self.recorder.sample(guard.command,guard.output,observation,self.control.backend.status().get('motor_ready'),
+                    age,not automatic.stop_event.is_set() and age is not None and age <= 300)
+                return
             age = (time.monotonic()-self.control.last_packet)*1000 if self.control.owner else None
             observation = self.control.backend.observation() if hasattr(self.control.backend,'observation') else None
             self.recorder.sample(self.control.desired_motion,self.control.output_motion,observation,
@@ -69,13 +79,16 @@ class App:
                 info=json.loads((path/'episode.json').read_text())
                 result.append({key:info.get(key) for key in ['episode_id','task','outcome','complete','samples','valid_samples']})
                 result[-1]['slam'] = info.get('slam')
+                result[-1]['control_mode'] = info.get('device_profile',{}).get('control_mode','manual')
             except (OSError,ValueError): continue
         return result
 
     def run(self):
         while not self.shutdown.wait(.02):
             try:
-                self.control.tick()
+                with self.control.lock:
+                    if self.autonomy.busy:self.autonomy.tick()
+                    else:self.control.tick()
                 self.record_sample()
                 self.fault = None
             except Exception:
@@ -84,6 +97,7 @@ class App:
                     if self.control.owner:
                         self.control._stop('제어 오류로 정지했습니다')
                 self.fault = '제어 연결 오류: 상태를 확인하세요'
+                if self.autonomy.busy:self.autonomy.request_stop(emergency=True)
                 time.sleep(.1)
 
 class Handler(BaseHTTPRequestHandler):
@@ -172,7 +186,11 @@ class Handler(BaseHTTPRequestHandler):
             data['storage'] = storage_info(self.app.recorder.root)
             data['episodes'] = self.app.episodes()
             data['updates'] = self.app.maintenance.status()
+            data['autonomy'] = self.app.autonomy.status(owner)
             return self.response(200, data)
+        if path == '/api/autonomy/map':
+            if not self.session():return self.response(401,{'error':'접속 코드를 입력하세요'})
+            return self.response(200,self.app.autonomy.map_view())
         match = re.fullmatch(r'/api/record/([0-9]{8}T[0-9]{6}Z-[a-f0-9]{8})/download',path)
         if match:
             if not self.session(): return self.response(401,{'error':'접속 코드를 입력하세요'})
@@ -230,20 +248,36 @@ class Handler(BaseHTTPRequestHandler):
                 return self.response(200, {'ok': True}, f'lekiwi_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200')
             owner = self.session()
             if not owner: return self.response(401, {'error': '접속 코드를 입력하세요'})
-            if path in ('/api/arm', '/api/prepare', '/api/record/start', '/api/command'):
+            if path in ('/api/arm', '/api/prepare', '/api/record/start', '/api/command','/api/autonomy/start'):
                 gate = self.app.maintenance.allow()
                 gate.__enter__()
+            if path in ('/api/arm','/api/prepare','/api/command','/api/record/start') and self.app.autonomy.busy:
+                raise ControlError('자율주행 중에는 수동 조종·별도 기록을 시작할 수 없습니다')
+            if path == '/api/autonomy/start':
+                self.app.autonomy.start(owner,data)
+                return self.response(202,{'ok':True,'state':'starting'})
+            if path == '/api/autonomy/pause':
+                self.app.autonomy.pause(owner);return self.response(200,{'ok':True})
+            if path == '/api/autonomy/resume':
+                self.app.autonomy.resume(owner);return self.response(200,{'ok':True})
+            if path == '/api/autonomy/stop':
+                self.app.autonomy.request_stop(owner,emergency=True)
+                return self.response(200,{'ok':True})
             if path == '/api/record/start':
                 with self.app.control.lock:
                     if self.app.control.owner != owner:
                         raise ControlError('조종 시작을 먼저 누른 뒤 기록하세요')
                 self.app.recorder.profile={**self.app.recorder.profile, **getattr(self.app.control.backend,'output_parameters',{'demo':True}), 'robot_name':self.app.device_name, 'camera_source':self.app.recorder.profile.get('camera_source','0'), 'camera_rotation':self.app.recorder.profile.get('camera_rotation',0)}
+                self.app.recorder.profile['control_mode']='manual'
                 episode=self.app.recorder.start(owner,data.get('task',''),slam=data.get('slam',False))
                 return self.response(200,{'episode_id':episode})
             if path == '/api/record/finish':
                 if self.app.recorder.owner not in (None,owner): raise ControlError('기록을 시작한 폰에서 종료하세요')
                 outcome=data.get('outcome','unfinished')
                 if outcome not in ('success','failure','unfinished'): raise ControlError('잘못된 결과 표시')
+                if self.app.autonomy.busy:
+                    self.app.autonomy.request_stop(owner,outcome=outcome)
+                    return self.response(202,{'episode':None,'finishing':True})
                 self.app.ending_owner=owner;self.app.ending_until_ns=time.monotonic_ns()+350000000
                 self.app.control.stop(owner)
                 try:
@@ -272,6 +306,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/stop':
                 # Any paired phone can stop this app's session, never arm someone else's.
                 self.app.control.stop(owner, emergency=True)
+                self.app.autonomy.request_stop(owner,emergency=True)
                 return self.response(200, {'ok': True})
             return self.response(404, {'error': 'Not found'})
         except (ControlError, ValueError, TypeError) as e:
@@ -322,6 +357,8 @@ def main():
     print(f'LeKiwi phone controller: http://{args.host}:{args.port} (motors disabled on startup)', flush=True)
     try: server.serve_forever(poll_interval=.1)
     finally:
+        app.autonomy.request_stop(emergency=True)
+        if app.autonomy.thread:app.autonomy.thread.join(timeout=20)
         app.shutdown.set(); worker.join(timeout=1)
         app.control.stop(emergency=True)
         try: app.recorder.close()
