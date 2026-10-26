@@ -22,7 +22,11 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def calibration(config):
     value=config.get('patrol',{}).get('calibration',{})
-    if value.get('measured') is not True:
+    bounded=(value.get('geometry_mode')=='confirmed_conservative_envelope'
+             and value.get('envelope_confirmed') is True
+             and value.get('stationary_sensor_test_passed') is True
+             and value.get('lidar_pose_source')=='installed_urdf_stationary_verified')
+    if value.get('measured') is not True and not bounded:
         raise ValueError('LiDAR 위치·방향과 바퀴·케이블 포함 외곽 크기 실측 설정이 필요합니다')
     radius=value.get('robot_radius')
     if not finite(radius) or not .05<=radius<=2:raise ValueError('실측 외접 반경이 필요합니다')
@@ -32,7 +36,7 @@ def calibration(config):
     if any(abs(transform[k])>2 for k in ('x','y','z')) or any(abs(transform[k])>2*math.pi for k in ('roll','pitch','yaw')):
         raise ValueError('LiDAR 실측 좌표 범위를 확인하세요')
     import re
-    result={k:value.get(k) for k in ('robot_radius','lidar_transform','external_lidar_tf')}
+    result={k:value.get(k) for k in ('robot_radius','lidar_transform','external_lidar_tf','geometry_mode','lidar_pose_source')}
     for k,default in [('base_frame','base_footprint'),('lidar_frame','lidar_link')]:
         result[k]=value.get(k,default)
         if not isinstance(result[k],str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_/]*',result[k]):

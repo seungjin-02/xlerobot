@@ -25,3 +25,7 @@
 `python3 -m unittest discover -s app -p test_control.py`, `python3 -m unittest discover -s tests`.
 `tools/simulate_patrol.py`는 완벽한 위치와 합성 센서를 사용한 로직 시험이다.
 `tests/ros_patrol_integration.py --output <새 폴더>`는 합성 센서·가상 바퀴에 실제 slam_toolbox/Nav2/rosbag를 연결한다. 물리 주행·카메라 품질·실제 청소율 검증과 구분한다.
+
+### 초기 보수 외곽 운행
+
+현재 기기는 사용자가 중심 기준 모든 돌출부가 22cm 안에 있음을 확인했다. geometry_mode=confirmed_conservative_envelope, envelope_confirmed=true, stationary_sensor_test_passed=true, lidar_pose_source=installed_urdf_stationary_verified 조합으로 제한 운행할 수 있다. measured=false를 유지하며 센서 좌표를 새 실측값으로 주장하지 않는다. 실제 정지 상태 SLAM 시험과 사용자 외곽 확인이 둘 다 필요하다. 완전한 기구학/동적 보정 검증을 대신하지 않는다.

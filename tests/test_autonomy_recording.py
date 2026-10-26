@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'app'))
-from autonomy import Autonomy
+from autonomy import Autonomy,calibration
 from core import ControlError
 
 class IndependentRecordingTests(unittest.TestCase):
@@ -17,6 +17,17 @@ class IndependentRecordingTests(unittest.TestCase):
         self.a.public_limits={'max_radius_m':1.};self.a.last_report={'state':'exploring'}
         self.a.guard=Mock(fault=None);self.a.health=Mock();self.a.health.report.return_value={'ready':True}
         self.a.last_planner=time.monotonic()
+    def test_confirmed_bound_preserves_estimated_pose_provenance(self):
+        value={'measured':False,'geometry_mode':'confirmed_conservative_envelope',
+            'envelope_confirmed':True,'stationary_sensor_test_passed':True,
+            'lidar_pose_source':'installed_urdf_stationary_verified','robot_radius':.22,
+            'lidar_transform':dict(x=0.,y=0.,z=.025384,roll=3.14159265359,pitch=0.,yaw=0.)}
+        result=calibration({'patrol':{'calibration':value}})
+        self.assertEqual(result['geometry_mode'],'confirmed_conservative_envelope')
+        for key in ['envelope_confirmed','stationary_sensor_test_passed','lidar_pose_source']:
+            bad=dict(value);bad.pop(key)
+            with self.assertRaises(ValueError):calibration({'patrol':{'calibration':bad}})
+
     def test_driving_without_recording_is_allowed(self):
         self.a.tick()
         self.a.guard.tick.assert_called_once_with(True)
