@@ -52,6 +52,7 @@ class Autonomy:
         self.last_planner=0.;self.outcome='unfinished';self.subscriptions=[];self.health=None
         self.health_lock=threading.Lock();self.run_dir=None;self.pending_action=None;self.handle=None
         self.episode=None;self.calibration_error=None
+        self.recording_expected=False;self.return_requested=False
         try:calibration(config)
         except ValueError as e:self.calibration_error=str(e)
 
@@ -64,7 +65,7 @@ class Autonomy:
                 'blocked_reason':'실물 ROS 센서가 없는 데모에서는 자율주행을 시작하지 않습니다' if isinstance(self.backend,DemoBackend) else self.calibration_error,
                 'error':self.error,'recording_episode':self.episode,'mission':self.last_report,
                 'limits':getattr(self,'public_limits',None),'paused':self.paused,
-                'recording_required':True,'local_only':True}
+                'recording_required':False,'local_only':True}
 
     def map_view(self):
         grid=self.grid
@@ -95,6 +96,7 @@ class Autonomy:
             task=str(data.get('task','자동 탐색 및 순회')).strip()
             if not 1<=len(task)<=240:raise ValueError('작업명을 1~240자로 입력하세요')
             self.owner=owner;self.error=None;self.phase='starting';self.paused=False
+            self.recording_expected=False;self.return_requested=False
             self.generation=getattr(self,'generation',0)+1
             self.results=queue.SimpleQueue();self.guard=None;self.handle=None;self.last_report=None;self.episode=None
             self.stop_event.clear();self.outcome='unfinished';self.mission=Mission(limits);self.grid=None
@@ -117,6 +119,26 @@ class Autonomy:
         with self.app.control.lock:
             if self.guard:self.guard.stop()
 
+    def return_home(self,owner):
+        if not self.busy or owner!=self.owner or self.phase!='running':raise ControlError('복귀할 내 운행이 없습니다')
+        self.return_requested=True;self.paused=False
+
+    def start_recording(self,owner,task,slam=False):
+        if not self.busy or owner!=self.owner or self.phase!='running':raise ControlError('내 자율주행이 실행된 뒤 기록하세요')
+        recorder=self.app.recorder
+        recorder.profile={**recorder.profile,'control_mode':'autonomous','patrol_limits':self.public_limits}
+        episode=recorder.start(owner,task,slam=slam)
+        if not self.busy or self.stop_event.is_set():
+            recorder.finish(owner,'unfinished');raise ControlError('운행이 종료되어 기록도 종료했습니다')
+        self.episode=episode;self.recording_expected=True
+        recorder.event({'type':'autonomy_recording_started','mission':self.last_report})
+        return episode
+
+    def finish_recording(self,owner,outcome):
+        if owner!=self.owner:raise ControlError('기록을 시작한 기기에서 종료하세요')
+        self.recording_expected=False
+        return self.app.recorder.finish(owner,outcome)
+
     def resume(self,owner):
         if not self.busy or owner!=self.owner or self.stop_event.is_set():raise ControlError('재개할 세션이 없습니다')
         if self.guard and self.guard.fault:raise ControlError('오류 후 자동 재활성화하지 않습니다. 종료 후 원인을 확인하세요')
@@ -136,7 +158,7 @@ class Autonomy:
         if self.guard is None or self.phase=='starting':return
         with self.health_lock:ready=self.health.report(time.monotonic())['ready']
         if self.stop_event.is_set() or self.paused:self.guard.stop();return
-        if self.app.recorder.error or not self.app.recorder.active:
+        if self.recording_expected and (self.app.recorder.error or not self.app.recorder.active):
             self.error='기록 입력 또는 저장 중단';self.stop_event.set();self.guard.stop(self.error);return
         if time.monotonic()-self.last_planner>3 or (self.process and self.process.poll() is not None):
             self.error='계획 프로세스 응답 중단';self.stop_event.set();self.guard.stop(self.error);return
@@ -270,8 +292,6 @@ class Autonomy:
                         'sensor_missing':missing,'pose_error':getattr(self,'pose_error',None),
                         'nav2_action_ready':self.client.server_is_ready()},ensure_ascii=False))
             if self.stop_event.is_set():return
-            recorder.profile={**previous_profile,'control_mode':'autonomous','patrol_limits':self.public_limits}
-            self.episode=recorder.start(self.owner,task,slam=True)
             self.guard=NavigationGuard(self.backend);self.phase='running';self.last_planner=time.monotonic()
             while not self.stop_event.wait(.2):
                 while not self.results.empty():
@@ -279,7 +299,9 @@ class Autonomy:
                     recorder.event({'type':'autonomy_goal_result','token':token,'outcome':outcome})
                 now=time.monotonic();measured_pose=self.read_pose(sensor['base_frame'])
                 with self.health_lock:ready=self.health.report(now)['ready']
-                if self.paused and self.mission.state!='paused':command=self.mission.pause(now)
+                if self.return_requested:
+                    self.return_requested=False;command=self.mission.halt('returning','operator_return',now)
+                elif self.paused and self.mission.state!='paused':command=self.mission.pause(now)
                 elif self.paused:command=self.mission.step(self.grid,self.pose or (0.,0.,0.),now,sensors_ready=ready)
                 else:
                     if self.mission.state=='paused':self.mission.resume()

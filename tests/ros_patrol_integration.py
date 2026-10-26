@@ -39,6 +39,11 @@ def run(output):
     worker=threading.Thread(target=app.run);worker.start()
     try:
         app.autonomy.start('synthetic-owner',{'max_radius':1.,'max_duration':25.,'cycles':1,'task':'synthetic online SLAM patrol'})
+        ready_deadline=time.monotonic()+50
+        while app.autonomy.busy and app.autonomy.phase=='starting' and time.monotonic()<ready_deadline:time.sleep(.1)
+        assert app.autonomy.phase=='running',app.autonomy.status()
+        assert not app.recorder.active,'Autonomy must not start recording automatically'
+        app.autonomy.start_recording('synthetic-owner','synthetic explicitly selected recording',slam=True)
         deadline=time.monotonic()+110
         while app.autonomy.busy and time.monotonic()<deadline:time.sleep(.2)
         if app.autonomy.busy:raise RuntimeError('Patrol did not finish within integration deadline')

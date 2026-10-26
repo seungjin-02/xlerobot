@@ -53,7 +53,7 @@ class HttpTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError):self.request('/api/autonomy/map')
         self.pair()
         state=self.data('/api/status')['autonomy']
-        self.assertFalse(state['configured']);self.assertTrue(state['recording_required'])
+        self.assertFalse(state['configured']);self.assertFalse(state['recording_required'])
         self.assertFalse(self.data('/api/autonomy/map')['available'])
         with self.assertRaises(urllib.error.HTTPError) as error:self.data('/api/autonomy/start',{'cycles':1})
         self.assertEqual(error.exception.code,409)

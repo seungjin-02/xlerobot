@@ -8,6 +8,7 @@ function renderAutonomy(){
   $('autonomyPause').disabled=!mine || !!a?.paused || autonomyBusy;
   $('autonomyResume').disabled=!mine || !a?.paused || autonomyBusy;
   $('autonomyStop').disabled=!busy || autonomyBusy;
+  $('autonomyReturn').disabled=!mine || a?.phase!=='running' || autonomyBusy;
   for(const id of ['autonomyTask','autonomyRadius','autonomyMinutes','autonomyCycles'])$(id).disabled=busy;
   const names={idle:'대기',starting:'센서·SLAM·기록 준비 중',running:'자동 운행',stopping:'정지·기록 저장 중',fault:'오류'};
   $('autonomyState').textContent=a?.error || a?.blocked_reason || (a?.paused?'일시정지':names[a?.phase]||'상태 확인 중');
@@ -15,7 +16,7 @@ function renderAutonomy(){
   const states={waiting:'준비',exploring:'미탐색 영역 탐색',patrolling:'순회',returning:'출발점 복귀',paused:'일시정지',complete:'완료',blocked:'경로 확보 불가',fault:'오류로 정지',stopped:'종료'};
   const reasons={returned_home:'출발점 복귀 완료',operator_stop:'사용자 종료',return_failed:'복귀 경로 이동 실패',return_distance_reserve:'복귀 거리 확보',cancel_ack_timeout:'목표 취소 응답 시간 초과'};
   $('autonomyProgress').textContent=m?`상태 ${states[m.state]||m.state} · 이동 ${Number(m.distance_m).toFixed(2)}m · 목표 ${m.goals_sent}개 · 완료 순회 ${m.cycles_finished}회${m.reason?' · '+(reasons[m.reason]||m.reason):''}`:'지도·좌표·센서가 준비되면 시작할 수 있습니다.';
-  if(busy){$('badge').textContent=a.paused?'자동 순회 일시정지':'자동 탐색·순회';$('controlSummary').textContent+=' · 자동 주행 및 원본 센서 기록';}
+  if(busy){$('badge').textContent=a.paused?'자동 순회 일시정지':'자동 탐색·순회';$('controlSummary').textContent+=' · 자동 운행';}
   if(currentScreen==='autonomy' && !autonomyMapBusy && Date.now()-autonomyMapAt>1500)refreshAutonomyMap();
 }
 async function refreshAutonomyMap(){
@@ -43,7 +44,7 @@ async function autonomyAction(action){
     await api('autonomy/'+action,body,10000);await refresh();
   }catch(e){message(e.message);}finally{autonomyBusy=false;render();}
 }
-document.addEventListener('DOMContentLoaded',()=>{for(const action of ['start','pause','resume','stop'])$('autonomy'+action[0].toUpperCase()+action.slice(1)).addEventListener('click',()=>autonomyAction(action));});
+document.addEventListener('DOMContentLoaded',()=>{for(const action of ['start','pause','resume','return','stop'])$('autonomy'+action[0].toUpperCase()+action.slice(1)).addEventListener('click',()=>autonomyAction(action));});
 const $ = id => document.getElementById(id);
 let lease = null, seq = 0, direction = 'idle', hold = null;
 let speed = 10 / 30, status = null, offset = 0, pairing = false, stopping = false;
@@ -100,12 +101,12 @@ function render() {
   document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('selected', Number(b.dataset.speed) === Math.round(speed * 30)));
   renderCameras();
   const rec=status?.recording;
-  $('recordStart').disabled=maintenance || !lease || recordBusy || !!rec?.active || !!rec?.finishing;
+  $('recordStart').disabled=maintenance || (!lease && !(status?.autonomy?.mine && status?.autonomy?.phase==='running')) || recordBusy || !!rec?.active || !!rec?.finishing;
   $('task').disabled=!!rec?.active || !!rec?.finishing;
   $('recordBadge').textContent=rec?.finishing?'저장 중':rec?.active?'기록 중':'대기';
   $('recordFinish').hidden=!rec?.active || !rec?.mine;
   $('recordFinish').querySelectorAll('button').forEach(b=>b.disabled=recordBusy);
-  $('recordState').textContent=rec?.error || rec?.camera_error || (rec?.active ? `${rec.samples}프레임 저장 · 학습에 쓸 수 있는 프레임 ${rec.valid_samples}개` : '조종 시작 후 기록할 수 있습니다. 기록 종료 버튼은 로봇도 정지시킵니다.');
+  $('recordState').textContent=rec?.error || rec?.camera_error || (rec?.active ? `${rec.samples}프레임 저장 · 학습에 쓸 수 있는 프레임 ${rec.valid_samples}개` : '수동 조종 또는 내 자율주행을 시작한 뒤 학습 데이터를 수집할 수 있습니다. 자동 운행과 기록은 별도로 종료합니다.');
   $('recordDuration').textContent=rec?.active || rec?.finishing ? `기록 시간 ${Math.floor(rec.elapsed_s || 0)}초 · ${rec.fps} Hz 목표` : '요청 명령·출력 제한 후 발행 명령·센서 상태를 구분해 저장합니다.';
   $('recordStorage').textContent=`남은 공간 ${bytes(status?.storage?.free_bytes)} · 시작 시 최소 256 MiB 필요`;
   const slam=rec?.slam;
@@ -228,7 +229,7 @@ $('recordStart').addEventListener('click',async()=>{
 });
 document.querySelectorAll('[data-outcome]').forEach(b=>b.addEventListener('click',async()=>{
   recordBusy=true;message();render();
-  try{await api('record/finish',{outcome:b.dataset.outcome},8000);generation++;lease=null;clearDirection();message('기록을 저장하고 조종을 종료했습니다.');}
+  try{const result=await api('record/finish',{outcome:b.dataset.outcome},15000);if(!result.autonomy_continues){generation++;lease=null;clearDirection();}message(result.autonomy_continues?'학습 데이터를 저장했습니다. 자율주행은 계속됩니다.':'기록을 저장하고 조종을 종료했습니다.');}
   catch(e){message(e.message);}
   finally{recordBusy=false;await refresh();render();}
 }));

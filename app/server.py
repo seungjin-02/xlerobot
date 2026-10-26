@@ -251,8 +251,8 @@ class Handler(BaseHTTPRequestHandler):
             if path in ('/api/arm', '/api/prepare', '/api/record/start', '/api/command','/api/autonomy/start'):
                 gate = self.app.maintenance.allow()
                 gate.__enter__()
-            if path in ('/api/arm','/api/prepare','/api/command','/api/record/start') and self.app.autonomy.busy:
-                raise ControlError('자율주행 중에는 수동 조종·별도 기록을 시작할 수 없습니다')
+            if path in ('/api/arm','/api/prepare','/api/command') and self.app.autonomy.busy:
+                raise ControlError('자율주행 중에는 수동 조종을 시작할 수 없습니다')
             if path == '/api/autonomy/start':
                 self.app.autonomy.start(owner,data)
                 return self.response(202,{'ok':True,'state':'starting'})
@@ -260,10 +260,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.app.autonomy.pause(owner);return self.response(200,{'ok':True})
             if path == '/api/autonomy/resume':
                 self.app.autonomy.resume(owner);return self.response(200,{'ok':True})
+            if path == '/api/autonomy/return':
+                self.app.autonomy.return_home(owner);return self.response(200,{'ok':True})
             if path == '/api/autonomy/stop':
                 self.app.autonomy.request_stop(owner,emergency=True)
                 return self.response(200,{'ok':True})
             if path == '/api/record/start':
+                if self.app.autonomy.busy:
+                    episode=self.app.autonomy.start_recording(owner,data.get('task',''),slam=data.get('slam',False))
+                    return self.response(200,{'episode_id':episode})
                 with self.app.control.lock:
                     if self.app.control.owner != owner:
                         raise ControlError('조종 시작을 먼저 누른 뒤 기록하세요')
@@ -276,8 +281,8 @@ class Handler(BaseHTTPRequestHandler):
                 outcome=data.get('outcome','unfinished')
                 if outcome not in ('success','failure','unfinished'): raise ControlError('잘못된 결과 표시')
                 if self.app.autonomy.busy:
-                    self.app.autonomy.request_stop(owner,outcome=outcome)
-                    return self.response(202,{'episode':None,'finishing':True})
+                    episode=self.app.autonomy.finish_recording(owner,outcome)
+                    return self.response(200,{'episode':episode,'autonomy_continues':True})
                 self.app.ending_owner=owner;self.app.ending_until_ns=time.monotonic_ns()+350000000
                 self.app.control.stop(owner)
                 try:
