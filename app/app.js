@@ -1,16 +1,24 @@
 'use strict';
 let autonomyBusy=false, autonomyMapBusy=false, autonomyMapAt=0;
+let autonomySpeed=3,autonomySpeedBusy=false;
 function renderAutonomy(){
   const a=status?.autonomy;
   if(!$('autonomyStart'))return;
   const busy=!!a?.busy, mine=!!a?.mine;
+  if(busy && !autonomySpeedBusy)autonomySpeed=a.speed_multiplier||3;
+  $('autonomySpeed').value=autonomySpeed;
+  $('autonomySpeedValue').textContent=autonomySpeed+'배';
+  $('autonomySpeedDetail').textContent=`이동 요청 상한 ${(autonomySpeed*.03).toFixed(2)} m/s · 회전 요청 상한 ${(autonomySpeed*.15).toFixed(2)} rad/s`;
+  const speedDisabled=autonomySpeedBusy || (busy && (!mine || a.phase!=='running'));
+  $('autonomySpeed').disabled=speedDisabled;
+  document.querySelectorAll('[data-autonomy-speed]').forEach(b=>{b.disabled=speedDisabled;b.classList.toggle('selected',Number(b.dataset.autonomySpeed)===autonomySpeed);});
   $('autonomyStart').disabled=!a?.configured || busy || !!status?.armed || !!status?.recording?.active || autonomyBusy || disconnected || !!status?.updates?.blocked;
   $('autonomyPause').disabled=!mine || !!a?.paused || autonomyBusy;
   $('autonomyResume').disabled=!mine || !a?.paused || autonomyBusy;
   $('autonomyStop').disabled=!busy || autonomyBusy;
   $('autonomyReturn').disabled=!mine || a?.phase!=='running' || autonomyBusy;
   for(const id of ['autonomyTask','autonomyRadius','autonomyMinutes','autonomyCycles'])$(id).disabled=busy;
-  const names={idle:'대기',starting:'센서·SLAM·기록 준비 중',running:'자동 운행',stopping:'정지·기록 저장 중',fault:'오류'};
+  const names={idle:'대기',starting:'센서·SLAM 준비 중',running:'자동 운행',stopping:'정지·기록 저장 중',fault:'오류'};
   $('autonomyState').textContent=a?.error || a?.blocked_reason || (a?.paused?'일시정지':names[a?.phase]||'상태 확인 중');
   const m=a?.mission;
   const states={waiting:'준비',exploring:'미탐색 영역 탐색',patrolling:'순회',returning:'출발점 복귀',paused:'일시정지',complete:'완료',blocked:'경로 확보 불가',fault:'오류로 정지',stopped:'종료'};
@@ -40,7 +48,7 @@ async function refreshAutonomyMap(){
 async function autonomyAction(action){
   if(autonomyBusy)return;autonomyBusy=true;render();
   try{
-    const body=action==='start'?{task:$('autonomyTask').value,max_radius:Number($('autonomyRadius').value),max_duration:Number($('autonomyMinutes').value)*60,cycles:Number($('autonomyCycles').value),max_distance:50}:{};
+    const body=action==='start'?{task:$('autonomyTask').value,max_radius:Number($('autonomyRadius').value),max_duration:Number($('autonomyMinutes').value)*60,cycles:Number($('autonomyCycles').value),max_distance:50,speed_multiplier:autonomySpeed}:{};
     await api('autonomy/'+action,body,10000);await refresh();
   }catch(e){message(e.message);}finally{autonomyBusy=false;render();}
 }
@@ -345,3 +353,19 @@ setInterval(() => { if (currentScreen === 'system' && !$('panel').hidden && !doc
 setInterval(sendCommand,100);
 setInterval(()=>{if(!$('panel').hidden&&!document.hidden)refresh();},1000);
 render();refresh();
+
+async function changeAutonomySpeed(value){
+  if(autonomySpeedBusy)return;
+  const selected=Number(value);
+  if(!Number.isInteger(selected)||selected<1||selected>3)return;
+  autonomySpeed=selected;
+  if(!status?.autonomy?.busy){renderAutonomy();return;}
+  autonomySpeedBusy=true;renderAutonomy();
+  try{await api('autonomy/speed',{speed_multiplier:selected},3000);}
+  catch(e){message(e.message);}
+  finally{autonomySpeedBusy=false;await refresh();renderAutonomy();}
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  $('autonomySpeed').addEventListener('input',()=>changeAutonomySpeed($('autonomySpeed').value));
+  document.querySelectorAll('[data-autonomy-speed]').forEach(b=>b.addEventListener('click',()=>changeAutonomySpeed(b.dataset.autonomySpeed)));
+});

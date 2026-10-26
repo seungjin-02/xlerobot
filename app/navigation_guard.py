@@ -9,14 +9,24 @@ class NavigationGuard:
         self.backend, self.clock, self.timeout = backend,clock,timeout
         self.command = (0.,0.,0.); self.output = (0.,0.,0.)
         self.received = None; self.previous = clock(); self.armed = False; self.fault = None
+        self.max_linear=.1;self.max_angular=.5
+
+    def set_limits(self,linear,angular):
+        if any(isinstance(v,bool) or not math.isfinite(v) for v in (linear,angular)) or not 0<linear<=.1 or not 0<angular<=.5:
+            raise ValueError('자율주행 속도는 현재 검증 상한을 초과할 수 없습니다')
+        self.max_linear,self.max_angular=linear,angular
+        self.command=self.capped(self.command);self.output=self.capped(self.output)
+
+    def capped(self,motion):
+        x,y,yaw=motion
+        ratio=min(1.,self.max_linear/math.hypot(x,y)) if x or y else 1.
+        return x*ratio,y*ratio,max(-self.max_angular,min(self.max_angular,yaw))
 
     def receive(self, motion):
         if self.fault: return
         if len(motion) != 3 or not all(math.isfinite(value) for value in motion):
             self.stop('비정상 Nav2 속도 명령'); return
-        x,y,yaw = motion
-        ratio = min(1.,.1/math.hypot(x,y)) if x or y else 1.
-        self.command = (x*ratio,y*ratio,max(-.5,min(.5,yaw)))
+        self.command = self.capped(motion)
         self.received = self.clock()
 
     def stop(self, reason=None):

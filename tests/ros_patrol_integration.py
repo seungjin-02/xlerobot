@@ -33,7 +33,7 @@ def run(output):
     backend=Backend();room=Room(backend.node,backend)
     output.mkdir(parents=True,exist_ok=False)
     config={'name':'SYNTHETIC PATROL TEST','recordings':str(output/'episodes'),
-        'patrol':{'calibration':{'measured':True,'robot_radius':.2,'lidar_frame':'laser','external_lidar_tf':True,
+        'patrol':{'wheel_self_filter':True,'calibration':{'measured':True,'robot_radius':.2,'lidar_frame':'laser','external_lidar_tf':True,
                     'lidar_transform':dict(x=.1,y=0.,z=0.,roll=0.,pitch=0.,yaw=0.)}}}
     app=App(backend,'synthetic-only',config);app.maintenance=Maintenance(output/'maintenance',required=False)
     worker=threading.Thread(target=app.run);worker.start()
@@ -48,12 +48,15 @@ def run(output):
         while app.autonomy.busy and time.monotonic()<deadline:time.sleep(.2)
         if app.autonomy.busy:raise RuntimeError('Patrol did not finish within integration deadline')
         status=app.autonomy.status('synthetic-owner')
+        (output/'integration-status.json').write_text(json.dumps(status,indent=2))
         if status['error']:raise RuntimeError(status['error'])
         episode=output/'episodes'/status['recording_episode']
         meta=json.loads((episode/'episode.json').read_text())
         events=[json.loads(line) for line in (episode/'commands.jsonl').read_text().splitlines()]
         successful=sum(e.get('type')=='autonomy_goal_result' and e.get('outcome')=='succeeded' for e in events)
         assert meta['complete'] and meta['slam']['valid_for_mapping'],meta
+        assert meta['slam']['config']['scan_topic']=='/scan_navigation'
+        assert meta['slam']['counts']['/scan']>0 and meta['slam']['counts']['/scan_navigation']>0
         assert meta['device_profile']['control_mode']=='autonomous'
         assert successful>=1 and backend.arms>=1,(successful,backend.arms,status)
         assert not backend.ready and backend.output==(0.,0.,0.)

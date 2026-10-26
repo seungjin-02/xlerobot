@@ -57,6 +57,8 @@ class Autonomy:
         self.health_lock=threading.Lock();self.run_dir=None;self.pending_action=None;self.handle=None
         self.episode=None;self.calibration_error=None
         self.recording_expected=False;self.return_requested=False
+        self.filtered_publisher=None;self.navigation_scan_topic=None
+        self.speed_multiplier=3
         try:calibration(config)
         except ValueError as e:self.calibration_error=str(e)
 
@@ -71,7 +73,7 @@ class Autonomy:
                 'blocked_reason':'실물 ROS 센서가 없는 데모에서는 자율주행을 시작하지 않습니다' if isinstance(self.backend,DemoBackend) else self.calibration_error,
                 'error':self.error,'recording_episode':self.episode,'mission':self.last_report,
                 'limits':getattr(self,'public_limits',None),'paused':self.paused,
-                'recording_required':False,'local_only':True,'sensor_health':sensor_health}
+                'recording_required':False,'local_only':True,'sensor_health':sensor_health,'speed_multiplier':self.speed_multiplier}
 
     def map_view(self):
         grid=self.grid
@@ -100,6 +102,9 @@ class Autonomy:
             if limits.max_radius>10 or limits.max_duration>3600 or limits.max_distance>500:
                 raise ValueError('시험 범위는 반경 10m·시간 3600초·총 경로 500m 이하여야 합니다')
             task=str(data.get('task','자동 탐색 및 순회')).strip()
+            multiplier=data.get('speed_multiplier',3)
+            self.validate_speed(multiplier)
+            self.speed_multiplier=multiplier
             if not 1<=len(task)<=240:raise ValueError('작업명을 1~240자로 입력하세요')
             self.owner=owner;self.error=None;self.phase='starting';self.paused=False
             self.recording_expected=False;self.return_requested=False
@@ -107,7 +112,7 @@ class Autonomy:
             self.results=queue.SimpleQueue();self.guard=None;self.handle=None;self.last_report=None;self.episode=None
             self.stop_event.clear();self.outcome='unfinished';self.mission=Mission(limits);self.grid=None
             self.public_limits={'max_radius_m':limits.max_radius,'max_duration_s':limits.max_duration,
-                                'max_distance_m':limits.max_distance,'cycles':limits.cycles,'max_linear_m_s':.1}
+                                'max_distance_m':limits.max_distance,'cycles':limits.cycles,'max_linear_m_s':.03*multiplier,'max_angular_rad_s':.15*multiplier}
             self.thread=threading.Thread(target=self.run,args=(measured,limits,task),daemon=True)
             self.thread.start()
 
@@ -128,6 +133,19 @@ class Autonomy:
     def return_home(self,owner):
         if not self.busy or owner!=self.owner or self.phase!='running':raise ControlError('복귀할 내 운행이 없습니다')
         self.return_requested=True;self.paused=False
+
+    @staticmethod
+    def validate_speed(multiplier):
+        if type(multiplier) is not int or not 1<=multiplier<=3:raise ValueError('현재 자율주행 속도는 1~3배로 설정하세요')
+
+    def set_speed(self,owner,multiplier):
+        self.validate_speed(multiplier)
+        with self.app.control.lock:
+            if not self.busy or self.owner!=owner or self.phase!='running':raise ControlError('내 자율주행 운행 중에 속도를 변경하세요')
+            self.speed_multiplier=multiplier
+            self.public_limits.update(max_linear_m_s=.03*multiplier,max_angular_rad_s=.15*multiplier)
+            if self.guard:self.guard.set_limits(.03*multiplier,.15*multiplier)
+        self.app.recorder.event({'type':'autonomy_speed_changed','multiplier':multiplier,'max_linear_m_s':.03*multiplier})
 
     def start_recording(self,owner,task,slam=False):
         if not self.busy or owner!=self.owner or self.phase!='running':raise ControlError('내 자율주행이 실행된 뒤 기록하세요')
@@ -184,8 +202,21 @@ class Autonomy:
         self.tf=tf2_ros.Buffer();self.listener=tf2_ros.TransformListener(self.tf,node,spin_thread=False,qos=QoSProfile(depth=5))
         self.client=ActionClient(node,NavigateToPose,'/navigate_to_pose');self.goal_type=NavigateToPose
         self.health=SensorHealth(sensor)
+        wheel_filter=self.config.get('patrol',{}).get('wheel_self_filter') is True
+        if wheel_filter:
+            if calibration(self.config)['robot_radius']<.20:raise ValueError('바퀴 반사 필터는 확인된 20cm 이상 외곽 설정이 필요합니다')
+            from sensor_msgs.msg import LaserScan
+            from rclpy.qos import qos_profile_sensor_data
+            self.navigation_scan_topic='/scan_navigation'
+            self.filtered_publisher=node.create_publisher(LaserScan,self.navigation_scan_topic,qos_profile_sensor_data)
         def observe(topic,message):
             with self.health_lock:self.health.observe(topic,message)
+            if topic==sensor['scan_topic'] and self.filtered_publisher:
+                import copy
+                from scan_filter import wheel_self_returns
+                filtered=copy.deepcopy(message)
+                filtered.ranges=wheel_self_returns(message.ranges,message.angle_min,message.angle_increment)
+                self.filtered_publisher.publish(filtered)
         for topic in (sensor['scan_topic'],sensor['odom_topic'],'/tf','/tf_static'):
             static=topic=='/tf_static'
             # Keep the newest continuous sample. A deep queue can leave scan and
@@ -252,7 +283,7 @@ class Autonomy:
         elif kind=='stop':self.stop_event.set()
 
     def run(self,measured,limits,task):
-        recorder=self.app.recorder;previous_profile=dict(recorder.profile)
+        recorder=self.app.recorder;previous_profile=dict(recorder.profile);previous_slam_config=recorder.slam_config
         maintenance=None;log=None
         try:
             from ament_index_python.packages import get_package_share_directory
@@ -265,6 +296,12 @@ class Autonomy:
             sensor=configuration(self.config.get('slam'),self.backend.output_parameters)
             if sensor['base_frame']!=measured['base_frame']:raise ValueError('보정과 바퀴 본체 프레임이 다릅니다')
             self.install_ros(sensor)
+            navigation_sensor=dict(sensor)
+            if self.navigation_scan_topic:
+                navigation_sensor['scan_topic']=self.navigation_scan_topic
+                extras={k:v for k,v in sensor['topics'].items() if k not in (sensor['scan_topic'],sensor['odom_topic'],'/tf','/tf_static')}
+                extras[sensor['scan_topic']]='sensor_msgs/msg/LaserScan'
+                recorder.slam_config=configuration({**sensor,'scan_topic':self.navigation_scan_topic,'extra_topics':extras})
             with self.app.control.lock:
                 state=self.backend.status()
                 if state.get('motor_ready') is True or state.get('other_publishers'):raise ValueError('다른 제어가 사용 중입니다')
@@ -275,7 +312,7 @@ class Autonomy:
             self.run_dir.mkdir(parents=True,mode=0o700,exist_ok=False)
             (self.run_dir/'calibration.json').write_text(json.dumps(measured))
             template=Path(get_package_share_directory('nav2_bringup'))/'params/nav2_params.yaml'
-            nav=parameters(yaml.safe_load(template.read_text()),Path('/unused-online-slam'),limits.robot_radius,sensor)
+            nav=parameters(yaml.safe_load(template.read_text()),Path('/unused-online-slam'),limits.robot_radius,navigation_sensor)
             nav.pop('amcl',None);nav.pop('map_server',None)
             for plugin in nav['planner_server']['ros__parameters'].get('planner_plugins',[]):
                 nav['planner_server']['ros__parameters'].setdefault(plugin,{})['allow_unknown']=False
@@ -283,7 +320,7 @@ class Autonomy:
                 nav[name][name]['ros__parameters']['track_unknown_space']=True
             (self.run_dir/'nav2.yaml').write_text(yaml.safe_dump(nav))
             slam=yaml.safe_load((Path(get_package_share_directory('slam_toolbox'))/'config/mapper_params_online_async.yaml').read_text())
-            slam['slam_toolbox']['ros__parameters'].update(use_sim_time=False,mode='mapping',scan_topic=sensor['scan_topic'],
+            slam['slam_toolbox']['ros__parameters'].update(use_sim_time=False,mode='mapping',scan_topic=navigation_sensor['scan_topic'],
                 base_frame=sensor['base_frame'],odom_frame=sensor['odom_frame'],map_frame='map',map_update_interval=1.,resolution=.05)
             (self.run_dir/'slam.yaml').write_text(yaml.safe_dump(slam))
             log=(self.run_dir/'stack.log').open('w')
@@ -300,7 +337,9 @@ class Autonomy:
                         'sensor_missing':missing,'pose_error':getattr(self,'pose_error',None),
                         'nav2_action_ready':self.client.server_is_ready()},ensure_ascii=False))
             if self.stop_event.is_set():return
-            self.guard=NavigationGuard(self.backend);self.phase='running';self.last_planner=time.monotonic()
+            self.guard=NavigationGuard(self.backend)
+            self.guard.set_limits(.03*self.speed_multiplier,.15*self.speed_multiplier)
+            self.phase='running';self.last_planner=time.monotonic()
             while not self.stop_event.wait(.2):
                 while not self.results.empty():
                     token,outcome=self.results.get();self.mission.result(token,outcome)
@@ -334,8 +373,11 @@ class Autonomy:
                 try:recorder.finish(self.owner,self.outcome)
                 except Exception as error:self.error='기록 종료 확인 실패: '+str(error)
             recorder.profile=previous_profile
+            recorder.slam_config=previous_slam_config
             for sub in self.subscriptions:self.backend.node.destroy_subscription(sub)
             self.subscriptions=[]
+            if self.filtered_publisher:self.backend.node.destroy_publisher(self.filtered_publisher)
+            self.filtered_publisher=None;self.navigation_scan_topic=None
             if hasattr(self,'client'):self.client.destroy()
             if hasattr(self,'listener'):self.listener.unregister()
             if log:log.close()

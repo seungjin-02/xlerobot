@@ -262,6 +262,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.app.autonomy.resume(owner);return self.response(200,{'ok':True})
             if path == '/api/autonomy/return':
                 self.app.autonomy.return_home(owner);return self.response(200,{'ok':True})
+            if path == '/api/autonomy/speed':
+                self.app.autonomy.set_speed(owner,data.get('speed_multiplier'));return self.response(200,{'ok':True})
             if path == '/api/autonomy/stop':
                 self.app.autonomy.request_stop(owner,emergency=True)
                 return self.response(200,{'ok':True})

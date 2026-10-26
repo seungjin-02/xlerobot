@@ -29,3 +29,9 @@
 ### 초기 보수 외곽 운행
 
 현재 기기는 사용자가 중심 기준 모든 돌출부가 22cm 안에 있음을 확인했다. geometry_mode=confirmed_conservative_envelope, envelope_confirmed=true, stationary_sensor_test_passed=true, lidar_pose_source=installed_urdf_stationary_verified 조합으로 제한 운행할 수 있다. measured=false를 유지하며 센서 좌표를 새 실측값으로 주장하지 않는다. 실제 정지 상태 SLAM 시험과 사용자 외곽 확인이 둘 다 필요하다. 완전한 기구학/동적 보정 검증을 대신하지 않는다.
+
+### 속도와 바퀴 근거리 반사
+
+자율주행 속도는 1~3배(선속도 0.03~0.09m/s, 각속도 0.15~0.45rad/s)이며 운행 중 소유자가 변경할 수 있다. 수동 속도는 별도다. 속도를 바꿔도 오래된 명령의 유효 시간이 연장되거나 모터가 자동 활성화되지 않는다. 기존 검증 상한 0.1m/s를 초과하지 않는다.
+
+현재 새 로봇에서 약 -120/0/+120도에 반복되는 12~15cm 근거리 반사를 관측했다. wheel_self_filter=true를 명시한 기기에 한해 이 세 방향의 ±18도 안에서 17cm 미만 반사만 주행용 /scan_navigation에서 NaN 처리한다. 다른 방향과 더 먼 외부 장애물은 보존한다. 원본 /scan은 변경하지 않고 자동 운행의 SLAM 기록에는 원본과 처리된 스캔을 모두 담는다. 20cm 미만 외곽 설정에서는 이 필터를 허용하지 않는다. 바퀴 자체 반사라는 해석은 실제 주행/가림 시험으로 추가 검증해야 한다.
