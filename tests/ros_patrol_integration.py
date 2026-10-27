@@ -19,7 +19,7 @@ from ros_slam_integration import Room
 from ros_navigation_integration import FakeMotor
 
 
-def run(output,round_trip=False,survey=False):
+def run(output,round_trip=False,survey=False,target_distance=1.):
     os.environ['ROS_DOMAIN_ID']='185';os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE']='LOCALHOST'
     import rclpy
     rclpy.init()
@@ -44,7 +44,7 @@ def run(output,round_trip=False,survey=False):
     worker=threading.Thread(target=app.run);worker.start()
     try:
         mission_data={'max_radius':1.5 if round_trip else 1.,'max_duration':120. if round_trip else 25.,'cycles':1,'task':'synthetic online SLAM patrol'}
-        if round_trip:mission_data.update(mode='round_trip',target_distance=1.,max_distance=2.4)
+        if round_trip:mission_data.update(mode='round_trip',target_distance=target_distance,max_distance=2*target_distance+.4)
         if survey:mission_data.update(initial_scan_rotation=True,rotation_clearance_confirmed=True,speed_multiplier=1)
         app.autonomy.start('synthetic-owner',mission_data)
         ready_deadline=time.monotonic()+(140 if survey else 50)
@@ -98,4 +98,4 @@ def run(output,round_trip=False,survey=False):
         backend.node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--round-trip',action='store_true');p.add_argument('--survey',action='store_true');a=p.parse_args();run(a.output,a.round_trip,a.survey)
+    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--round-trip',action='store_true');p.add_argument('--survey',action='store_true');p.add_argument('--distance',type=float,default=1.);a=p.parse_args();run(a.output,a.round_trip,a.survey,a.distance)

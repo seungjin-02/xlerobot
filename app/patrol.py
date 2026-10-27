@@ -194,6 +194,7 @@ class Mission:
         self.home = None; self.started = self.previous_time = self.last_pose = None
         self.trail = []; self.cycle_trail = []; self.failed = []
         self.distance = 0.; self.cycles = 0; self.sequence = 0
+        self.map_distance=0.;self.travel_reference=None;self.last_travel_distance=None
         self.active = None; self.active_since = None; self.cancelling = False
         self.cancel_since = None; self.after_cancel = None; self.failures = 0
         self.return_started = None; self.events = []
@@ -249,7 +250,7 @@ class Mission:
             if goal.kind == 'return': self.state = 'blocked'; self.reason = 'return_failed'
         return True
 
-    def step(self, grid, pose, now, pose_received_at=None, sensors_ready=True):
+    def step(self, grid, pose, now, pose_received_at=None, sensors_ready=True,travel_distance=None):
         if not finite(now) or len(pose) != 3 or not all(finite(v) for v in pose):
             raise ValueError('Invalid time or pose')
         if self.previous_time is not None and now < self.previous_time:
@@ -275,7 +276,14 @@ class Mission:
         if self.last_pose is not None:
             delta = math.dist(pose[:2],self.last_pose[:2])
             if delta > 1.: return self.halt('fault','localization_jump',now)
-            self.distance += delta
+            self.map_distance+=delta
+            if travel_distance is None:self.distance += delta
+        if travel_distance is not None:
+            if not finite(travel_distance) or travel_distance<0:return self.halt('fault','invalid_travel_distance',now)
+            if self.last_travel_distance is not None and travel_distance<self.last_travel_distance:
+                return self.halt('fault','odometry_distance_regression',now)
+            if self.travel_reference is None:self.travel_reference=travel_distance
+            self.last_travel_distance=travel_distance;self.distance=travel_distance-self.travel_reference
         self.last_pose = tuple(pose)
         if self.round_trip_distance is not None:
             dx,dy=pose[0]-self.home[0],pose[1]-self.home[1]
@@ -367,6 +375,7 @@ class Mission:
 
     def report(self):
         return {'state':self.state,'reason':self.reason,'distance_m':self.distance,'cycles_finished':self.cycles,
+                'distance_source':'wheel_odometry' if self.travel_reference is not None else 'map_pose','map_distance_m':self.map_distance,
                 'goals_sent':self.sequence,'goal_failures':self.failures,'home':self.home,
                 'active_goal_kind':self.active.kind if self.active else None,'cancel_pending':self.cancelling,
                 'physical_motion_verified':False,'task_mode':'round_trip' if self.round_trip_distance is not None else 'patrol',

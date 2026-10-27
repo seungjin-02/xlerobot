@@ -221,10 +221,11 @@ class Autonomy:
         from rclpy.qos import QoSProfile,ReliabilityPolicy,DurabilityPolicy
         import tf2_ros
         node=self.backend.node
-        self.tf=tf2_ros.Buffer();self.listener=tf2_ros.TransformListener(self.tf,node,spin_thread=False,qos=QoSProfile(depth=5))
+        self.tf=tf2_ros.Buffer();self.listener=tf2_ros.TransformListener(self.tf,node,spin_thread=False,qos=QoSProfile(depth=10))
         self.client=ActionClient(node,NavigateToPose,'/navigate_to_pose');self.goal_type=NavigateToPose
         self.spin_client=ActionClient(node,Spin,'/spin');self.spin_goal_type=Spin
         self.health=SensorHealth(sensor)
+        self.wheel_distance=0.;self.previous_wheel_position=None
         wheel_filter=self.config.get('patrol',{}).get('wheel_self_filter') is True
         if wheel_filter:
             if calibration(self.config)['robot_radius']<.20:raise ValueError('바퀴 반사 필터는 확인된 20cm 이상 외곽 설정이 필요합니다')
@@ -238,6 +239,14 @@ class Autonomy:
             with self.health_lock:self.health.observe(topic,message)
             if topic==sensor['odom_topic']:
                 p,q=message.pose.pose.position,message.pose.pose.orientation
+                position=(p.x,p.y)
+                if all(math.isfinite(v) for v in position):
+                    if self.previous_wheel_position is not None:
+                        delta=math.dist(position,self.previous_wheel_position)
+                        if delta>1.:
+                            self.error='엔코더 위치 불연속';self.stop_event.set()
+                        else:self.wheel_distance+=delta
+                    self.previous_wheel_position=position
                 self.last_wheel_pose=(p.x,p.y,math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z)))
             if topic==sensor['scan_topic'] and self.filtered_publisher:
                 import copy
@@ -251,7 +260,9 @@ class Autonomy:
             static=topic=='/tf_static'
             # Keep the newest continuous sample. A deep queue can leave scan and
             # odometry seconds apart while Nav2 starts on the Raspberry Pi.
-            qos=QoSProfile(depth=100 if static else 1,reliability=ReliabilityPolicy.RELIABLE if static else ReliabilityPolicy.BEST_EFFORT,
+            # /tf carries independent odom and SLAM publishers. Depth 1 can
+            # repeatedly overwrite one edge with the other publisher's messages.
+            qos=QoSProfile(depth=100 if static else 10 if topic=='/tf' else 1,reliability=ReliabilityPolicy.RELIABLE if static else ReliabilityPolicy.BEST_EFFORT,
                 durability=DurabilityPolicy.TRANSIENT_LOCAL if static else DurabilityPolicy.VOLATILE)
             self.subscriptions.append(node.create_subscription(get_message(sensor['topics'][topic]),topic,lambda m,t=topic:observe(t,m),qos))
         def receive_map(message):
@@ -326,7 +337,7 @@ class Autonomy:
         self.guard.set_limits(.03,.15)
         def check():
             self.last_planner=time.monotonic()
-            if self.stop_event.is_set() or self.paused:raise ValueError('초기 지도 회전 중단')
+            if self.stop_event.is_set() or self.paused:raise ValueError(self.error or '초기 지도 회전 중단')
             pose=self.read_pose(sensor['base_frame'])
             delta=math.dist(self.last_wheel_pose[:2],wheel_origin[:2])
             self.startup_survey['max_translation_m']=max(delta,self.startup_survey['max_translation_m'])
@@ -481,7 +492,7 @@ class Autonomy:
                 else:
                     if self.mission.state=='paused':self.mission.resume()
                     pose,received=measured_pose if measured_pose else (self.pose or (0.,0.,0.),now-10)
-                    command=self.mission.step(self.grid,pose,now,pose_received_at=received,sensors_ready=ready)
+                    command=self.mission.step(self.grid,pose,now,pose_received_at=received,sensors_ready=ready,travel_distance=self.wheel_distance)
                 self.dispatch(command);self.last_planner=time.monotonic();self.last_report=self.mission.report()
                 if self.mission.state in ('complete','blocked','fault','stopped'):
                     self.stop_event.set()
