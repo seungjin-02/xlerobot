@@ -4,6 +4,14 @@ import time
 from speed_limiter import slew_motion
 
 
+def rotation_disagreement(map_heading,map_origin,wheel_heading,wheel_origin):
+    """Compare relative rotations; initial map and odom headings may differ."""
+    values=(map_heading,map_origin,wheel_heading,wheel_origin)
+    if not all(math.isfinite(v) for v in values):raise ValueError('Invalid rotation feedback')
+    wrap=lambda v:(v+math.pi)%(2*math.pi)-math.pi
+    return abs(wrap(wrap(map_heading-map_origin)-wrap(wheel_heading-wheel_origin)))
+
+
 class NavigationGuard:
     def __init__(self, backend, clock=time.monotonic, timeout=.3):
         self.backend, self.clock, self.timeout = backend,clock,timeout

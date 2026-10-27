@@ -13,7 +13,7 @@ import threading
 import time
 
 from core import ControlError,DemoBackend
-from navigation_guard import NavigationGuard
+from navigation_guard import NavigationGuard,rotation_disagreement
 from patrol import Grid,Limits,Mission,Planner,finite
 from slam import SensorHealth,configuration
 
@@ -332,6 +332,9 @@ class Autonomy:
             self.startup_survey['max_translation_m']=max(delta,self.startup_survey['max_translation_m'])
             if not pose or delta>.03:
                 raise ValueError('초기 지도 회전 중 위치 이탈·TF 입력 이상')
+            disagreement=rotation_disagreement(pose[0][2],origin[2],self.last_wheel_pose[2],wheel_origin[2])
+            self.startup_survey['rotation_disagreement_rad']=disagreement
+            if disagreement>.35:raise ValueError('지도·엔코더 회전 방향 불일치')
             with self.health_lock:healthy=self.health.report(time.monotonic())['ready']
             if not healthy or self.guard.fault:raise ValueError(self.guard.fault or '초기 지도 회전 센서 입력 이상')
             return pose[0]
