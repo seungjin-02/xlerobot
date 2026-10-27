@@ -45,7 +45,7 @@ def run(output,round_trip=False,survey=False):
     try:
         mission_data={'max_radius':1.5 if round_trip else 1.,'max_duration':120. if round_trip else 25.,'cycles':1,'task':'synthetic online SLAM patrol'}
         if round_trip:mission_data.update(mode='round_trip',target_distance=1.,max_distance=2.4)
-        if survey:mission_data.update(initial_scan_rotation=True,rotation_clearance_confirmed=True)
+        if survey:mission_data.update(initial_scan_rotation=True,rotation_clearance_confirmed=True,speed_multiplier=1)
         app.autonomy.start('synthetic-owner',mission_data)
         ready_deadline=time.monotonic()+(140 if survey else 50)
         while app.autonomy.busy and app.autonomy.phase in ('starting','surveying') and time.monotonic()<ready_deadline:time.sleep(.1)

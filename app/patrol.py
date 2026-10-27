@@ -6,6 +6,7 @@ Goals use known free space only. Unknown/unreachable space is never declared cov
 from collections import deque
 from dataclasses import dataclass
 import math
+from clearance import euclidean_distances
 
 
 def finite(value):
@@ -111,11 +112,11 @@ class Planner:
                        for i,v in enumerate(grid.data))
             grid=Grid(grid.width,grid.height,grid.resolution,data,grid.origin_x,grid.origin_y,grid.origin_yaw,grid.received_at)
         self.grid, self.pose, self.home, self.limits = grid, pose, home, limits
-        # Eight-neighbor unit distance is Chebyshev distance, a conservative lower
-        # bound on Euclidean distance. Subtract cell half-diagonal via the threshold.
+        # Exact center distances. Account for both full occupied cells and a
+        # candidate pose anywhere inside its cell, not only the cell centers.
         self.obstacles = self.distances(lambda v: v > 20, border=True)
         self.unknown = self.distances(lambda v: v == -1, border=True)
-        threshold = (limits.robot_radius+limits.margin)/grid.resolution+math.sqrt(.5)
+        threshold = (limits.robot_radius+limits.margin)/grid.resolution+math.sqrt(2.)
         self.safe = {i for i,v in enumerate(grid.data) if 0 <= v <= 20
                      and self.obstacles[i] > threshold and self.unknown[i] > threshold
                      and math.dist(grid.world(i),home)+limits.robot_radius+limits.margin <= limits.max_radius}
@@ -131,16 +132,10 @@ class Planner:
                         self.distance[neighbor] = self.distance[current]+1; queue.append(neighbor)
 
     def distances(self, predicate, border=False):
-        g = self.grid; values = [g.width+g.height]*len(g.data); queue = deque()
-        for i,v in enumerate(g.data):
-            if predicate(v) or (border and (i%g.width in (0,g.width-1) or i//g.width in (0,g.height-1))):
-                values[i] = 0; queue.append(i)
-        while queue:
-            i = queue.popleft()
-            for n in g.neighbors(i, diagonal=True):
-                if values[n] > values[i]+1:
-                    values[n] = values[i]+1; queue.append(n)
-        return values
+        g=self.grid
+        seeds=[predicate(v) or (border and (i%g.width in (0,g.width-1) or i//g.width in (0,g.height-1)))
+               for i,v in enumerate(g.data)]
+        return euclidean_distances(g.width,g.height,seeds)
 
     def goal(self, index, kind):
         if index not in self.parents: return None

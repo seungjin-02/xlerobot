@@ -181,3 +181,5 @@ Nav2 주행과 정책 학습은 구분합니다. 우선 사람이 수동으로 �
 `calibration.known_body_radius`는 실측된 중심 본체가 현재 점유하는 반경이며 기본 0, 최대 0.10m입니다. 이 값은 원시 지도 변경 없이 Planner의 현재 본체 내부 unknown 셀만 처리합니다. 셀 전체가 그 반경 안에 들어와야 하며 occupied 셀, 본체 밖 unknown, 로봇 외곽·여유 제한은 유지합니다. 보수 운행 반경(예:0.22m) 전체를 빈 공간으로 만들지 않습니다. 물리적 통과 공간을 추가로 검증하는 기능을 대체하지 않습니다.
 
 참고: 사용자 제공 Notion의 [르키위 사용법](https://app.notion.com/p/6768cabd660f8237b0eb013fbacbb76a), 기기 내부 navigation_scan.yaml, SLAM Toolbox Jazzy shouldProcessScan 구현을 대조했습니다. 합성 통합 시험은 `python3 tests/ros_patrol_integration.py --round-trip --survey --output /절대/새/출력폴더`로 실행합니다. 합성 센서·가상 모터 결과는 실물 주행 검증과 구분합니다.
+
+출발 검사 거리는 정확한 Euclidean distance transform으로 계산합니다. 로봇 외곽과 여유를 유지하고 장애물 셀과 후보 위치 셀의 반대쪽 모서리를 모두 고려해 셀 대각선만큼 보정합니다. 사각 격자(Chebyshev) 근사의 대각선 과소평가를 없애며, occupied/unknown 입력이나 원시 지도는 삭제하지 않습니다. 거리장은 무작위 작은 격자의 모든 최근접 거리와 직접 계산 결과를 대조해 검사합니다.

@@ -41,6 +41,10 @@ def parameters(template, map_path, radius, config, initial_pose=None):
     controller = value['controller_server']['ros__parameters']
     controller.update(odom_topic=config['odom_topic'],controller_frequency=20.,enable_stamped_cmd_vel=False,
                       min_x_velocity_threshold=.001,min_y_velocity_threshold=.001,min_theta_velocity_threshold=.001)
+    # The web guard can cap motion at 0.03 m/s. Nav2's default 0.5 m
+    # progress in 10 s would declare that valid low-speed motion stuck.
+    controller.setdefault('progress_checker',{'plugin':'nav2_controller::SimpleProgressChecker'}).update(
+        required_movement_radius=.05,movement_time_allowance=15.)
     controller['FollowPath'] = dict(plugin='dwb_core::DWBLocalPlanner',min_vel_x=-.1,min_vel_y=-.1,
         max_vel_x=.1,max_vel_y=.1,max_vel_theta=.5,min_speed_xy=0.,max_speed_xy=.1,min_speed_theta=0.,
         acc_lim_x=.2,acc_lim_y=.2,acc_lim_theta=.4,decel_lim_x=-.2,decel_lim_y=-.2,decel_lim_theta=-.4,
