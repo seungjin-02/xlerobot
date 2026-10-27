@@ -19,7 +19,7 @@ from ros_slam_integration import Room
 from ros_navigation_integration import FakeMotor
 
 
-def run(output,round_trip=False):
+def run(output,round_trip=False,survey=False):
     os.environ['ROS_DOMAIN_ID']='185';os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE']='LOCALHOST'
     import rclpy
     rclpy.init()
@@ -30,19 +30,25 @@ def run(output,round_trip=False):
         def poll(self):rclpy.spin_once(self.node,timeout_sec=0)
         def _ensure_base(self):pass
         def observation(self):return {'received_ns':time.monotonic_ns(),'ros_stamp_ns':self.node.get_clock().now().nanoseconds,'values':[*room.position,*self.output]}
-    backend=Backend();room=Room(backend.node,backend)
+    backend=Backend();room=Room(backend.node,backend,wheel_shadows=survey)
     output.mkdir(parents=True,exist_ok=False)
     config={'name':'SYNTHETIC PATROL TEST','recordings':str(output/'episodes'),
         'patrol':{'wheel_self_filter':True,'calibration':{'measured':True,'robot_radius':.2,'lidar_frame':'laser','external_lidar_tf':True,
                     'lidar_transform':dict(x=.1,y=0.,z=0.,roll=0.,pitch=0.,yaw=0.)}}}
     app=App(backend,'synthetic-only',config);app.maintenance=Maintenance(output/'maintenance',required=False)
+    if survey:
+        config['patrol']['wheel_filter_centers_deg']=[-60,60,180]
+        config['patrol']['self_return_radius']=.19
+        config['patrol']['calibration'].update(known_body_radius=.10,robot_radius=.22)
+        config['patrol']['calibration']['lidar_transform']['x']=0.
     worker=threading.Thread(target=app.run);worker.start()
     try:
         mission_data={'max_radius':1.5 if round_trip else 1.,'max_duration':120. if round_trip else 25.,'cycles':1,'task':'synthetic online SLAM patrol'}
         if round_trip:mission_data.update(mode='round_trip',target_distance=1.,max_distance=2.4)
+        if survey:mission_data.update(initial_scan_rotation=True,rotation_clearance_confirmed=True)
         app.autonomy.start('synthetic-owner',mission_data)
-        ready_deadline=time.monotonic()+50
-        while app.autonomy.busy and app.autonomy.phase=='starting' and time.monotonic()<ready_deadline:time.sleep(.1)
+        ready_deadline=time.monotonic()+(140 if survey else 50)
+        while app.autonomy.busy and app.autonomy.phase in ('starting','surveying') and time.monotonic()<ready_deadline:time.sleep(.1)
         assert app.autonomy.phase=='running',app.autonomy.status()
         assert not app.recorder.active,'Autonomy must not start recording automatically'
         if not round_trip:app.autonomy.start_recording('synthetic-owner','synthetic explicitly selected recording',slam=True)
@@ -50,6 +56,7 @@ def run(output,round_trip=False):
         while app.autonomy.busy and time.monotonic()<deadline:time.sleep(.2)
         if app.autonomy.busy:raise RuntimeError('Patrol did not finish within integration deadline')
         status=app.autonomy.status('synthetic-owner')
+        if survey:assert status['startup_survey']['state']=='complete',status
         (output/'integration-status.json').write_text(json.dumps(status,indent=2))
         (output/'last-map.json').write_text(json.dumps(app.autonomy.map_view()))
         if status['error']:raise RuntimeError(status['error'])
@@ -83,10 +90,12 @@ def run(output,round_trip=False):
         (output/'integration-report.json').write_text(json.dumps(report,indent=2))
         print(json.dumps(report,indent=2))
     finally:
+        (output/'last-map.json').write_text(json.dumps(app.autonomy.map_view()))
+        (output/'integration-status.json').write_text(json.dumps(app.autonomy.status(),indent=2))
         app.autonomy.request_stop(emergency=True)
         if app.autonomy.thread:app.autonomy.thread.join(timeout=20)
         app.shutdown.set();worker.join(timeout=3);app.recorder.close();room.close()
         backend.node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--round-trip',action='store_true');a=p.parse_args();run(a.output,a.round_trip)
+    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--round-trip',action='store_true');p.add_argument('--survey',action='store_true');a=p.parse_args();run(a.output,a.round_trip,a.survey)

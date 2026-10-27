@@ -14,7 +14,7 @@ import time
 
 from core import ControlError,DemoBackend
 from navigation_guard import NavigationGuard
-from patrol import Grid,Limits,Mission,finite
+from patrol import Grid,Limits,Mission,Planner,finite
 from slam import SensorHealth,configuration
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -71,7 +71,7 @@ class Autonomy:
         return {'phase':self.phase,'busy':self.busy,'mine':self.busy and owner==self.owner,
                 'configured':self.calibration_error is None and not isinstance(self.backend,DemoBackend),
                 'blocked_reason':'실물 ROS 센서가 없는 데모에서는 자율주행을 시작하지 않습니다' if isinstance(self.backend,DemoBackend) else self.calibration_error,
-                'error':self.error,'fault_sensor_health':getattr(self,'fault_sensor_health',None),'recording_episode':self.episode,'mission':self.last_report,
+                'error':self.error,'startup_survey':getattr(self,'startup_survey',None),'fault_sensor_health':getattr(self,'fault_sensor_health',None),'recording_episode':self.episode,'mission':self.last_report,
                 'limits':getattr(self,'public_limits',None),'paused':self.paused,
                 'recording_required':False,'local_only':True,'sensor_health':sensor_health,'speed_multiplier':self.speed_multiplier}
 
@@ -99,6 +99,10 @@ class Autonomy:
             measured=calibration(self.config)
             mode=data.get('mode','patrol')
             if mode not in ('patrol','round_trip'):raise ValueError('알 수 없는 운행 방식')
+            survey=data.get('initial_scan_rotation',False)
+            if type(survey) is not bool:raise ValueError('초기 회전 설정은 boolean입니다')
+            if survey and data.get('rotation_clearance_confirmed') is not True:
+                raise ValueError('제자리 회전 전 모든 방향의 외곽 여유 공간을 확인하세요')
             round_trip_distance=data.get('target_distance',1.) if mode=='round_trip' else None
             # Validate the mission before changing controller/session state.
             if mode=='round_trip' and (isinstance(round_trip_distance,bool) or not finite(round_trip_distance) or not .1<=round_trip_distance<=1.):
@@ -109,7 +113,8 @@ class Autonomy:
                 max_distance=min(max_distance,2*round_trip_distance+.4)
             limits=Limits(measured['robot_radius'],max_radius=data.get('max_radius',3.),
                 max_duration=data.get('max_duration',600.),max_distance=max_distance,cycles=data.get('cycles',2),
-                goal_timeout=90. if mode=='round_trip' else 45.)
+                goal_timeout=90. if mode=='round_trip' else 45.,
+                known_body_radius=self.config.get('patrol',{}).get('calibration',{}).get('known_body_radius',0.))
             if mode=='round_trip' and round_trip_distance+limits.robot_radius+limits.margin>limits.max_radius:
                 raise ValueError('출발점 반경은 목표 거리와 로봇 외곽·여유 공간보다 커야 합니다')
             if limits.max_radius>10 or limits.max_duration>3600 or limits.max_distance>500:
@@ -120,6 +125,7 @@ class Autonomy:
             self.speed_multiplier=multiplier
             if not 1<=len(task)<=240:raise ValueError('작업명을 1~240자로 입력하세요')
             self.owner=owner;self.error=None;self.fault_sensor_health=None;self.phase='starting';self.paused=False
+            self.initial_scan_rotation=survey;self.startup_survey=None
             self.recording_expected=False;self.return_requested=False
             self.generation=getattr(self,'generation',0)+1
             self.results=queue.SimpleQueue();self.guard=None;self.handle=None;self.last_report=None;self.episode=None
@@ -208,7 +214,7 @@ class Autonomy:
     def install_ros(self,sensor):
         import rclpy
         from rclpy.action import ActionClient
-        from nav2_msgs.action import NavigateToPose
+        from nav2_msgs.action import NavigateToPose,Spin
         from nav_msgs.msg import OccupancyGrid
         from geometry_msgs.msg import Twist
         from rosidl_runtime_py.utilities import get_message
@@ -217,21 +223,29 @@ class Autonomy:
         node=self.backend.node
         self.tf=tf2_ros.Buffer();self.listener=tf2_ros.TransformListener(self.tf,node,spin_thread=False,qos=QoSProfile(depth=5))
         self.client=ActionClient(node,NavigateToPose,'/navigate_to_pose');self.goal_type=NavigateToPose
+        self.spin_client=ActionClient(node,Spin,'/spin');self.spin_goal_type=Spin
         self.health=SensorHealth(sensor)
         wheel_filter=self.config.get('patrol',{}).get('wheel_self_filter') is True
         if wheel_filter:
             if calibration(self.config)['robot_radius']<.20:raise ValueError('바퀴 반사 필터는 확인된 20cm 이상 외곽 설정이 필요합니다')
+            if self.config.get('patrol',{}).get('self_return_radius',0.)>calibration(self.config)['robot_radius']-.02:
+                raise ValueError('자체 반사 필터가 확인된 로봇 외곽을 초과합니다')
             from sensor_msgs.msg import LaserScan
             from rclpy.qos import qos_profile_sensor_data
             self.navigation_scan_topic='/scan_navigation'
             self.filtered_publisher=node.create_publisher(LaserScan,self.navigation_scan_topic,qos_profile_sensor_data)
         def observe(topic,message):
             with self.health_lock:self.health.observe(topic,message)
+            if topic==sensor['odom_topic']:
+                p,q=message.pose.pose.position,message.pose.pose.orientation
+                self.last_wheel_pose=(p.x,p.y,math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z)))
             if topic==sensor['scan_topic'] and self.filtered_publisher:
                 import copy
                 from scan_filter import wheel_self_returns
                 filtered=copy.deepcopy(message)
-                filtered.ranges=wheel_self_returns(message.ranges,message.angle_min,message.angle_increment)
+                filtered.ranges=wheel_self_returns(message.ranges,message.angle_min,message.angle_increment,
+                    centers=self.config.get('patrol',{}).get('wheel_filter_centers_deg',(-120,0,120)),
+                    self_radius=self.config.get('patrol',{}).get('self_return_radius',0.))
                 self.filtered_publisher.publish(filtered)
         for topic in (sensor['scan_topic'],sensor['odom_topic'],'/tf','/tf_static'):
             static=topic=='/tf_static'
@@ -252,6 +266,8 @@ class Autonomy:
         self.subscriptions.append(node.create_subscription(OccupancyGrid,'/map',receive_map,qos))
         def command(message):
             if self.guard and not self.paused and not self.stop_event.is_set():
+                if self.phase=='surveying' and math.hypot(message.linear.x,message.linear.y)>1e-6:
+                    self.guard.stop('초기 지도 회전 중 직선 이동 명령');self.stop_event.set();return
                 self.guard.receive((message.linear.x,message.linear.y,message.angular.z))
         self.subscriptions.append(node.create_subscription(Twist,'/nav2_cmd_vel',command,10))
 
@@ -298,6 +314,68 @@ class Autonomy:
             if self.handle:self.handle.cancel_goal_async()
         elif kind=='stop':self.stop_event.set()
 
+    def survey_start(self,sensor,limits):
+        """Nav2 Spin observes wheel shadows without translating into unknown space."""
+        from builtin_interfaces.msg import Duration
+        initial=self.read_pose(sensor['base_frame'])
+        if not initial:raise ValueError('초기 회전 위치 확인 실패')
+        origin=initial[0];wheel_origin=getattr(self,'last_wheel_pose',None)
+        if wheel_origin is None:raise ValueError('초기 회전 엔코더 위치 확인 실패')
+        self.phase='surveying';self.last_planner=time.monotonic()
+        self.startup_survey={'state':'running','angles_rad':[math.pi/3,-math.pi/3],'results':[],'origin':origin,'wheel_origin':wheel_origin,'max_translation_m':0.}
+        self.guard.set_limits(.03,.15)
+        def check():
+            self.last_planner=time.monotonic()
+            if self.stop_event.is_set() or self.paused:raise ValueError('초기 지도 회전 중단')
+            pose=self.read_pose(sensor['base_frame'])
+            delta=math.dist(self.last_wheel_pose[:2],wheel_origin[:2])
+            self.startup_survey['max_translation_m']=max(delta,self.startup_survey['max_translation_m'])
+            if not pose or delta>.03:
+                raise ValueError('초기 지도 회전 중 위치 이탈·TF 입력 이상')
+            with self.health_lock:healthy=self.health.report(time.monotonic())['ready']
+            if not healthy or self.guard.fault:raise ValueError(self.guard.fault or '초기 지도 회전 센서 입력 이상')
+            return pose[0]
+        def wait(future,deadline):
+            while not future.done():
+                check()
+                if time.monotonic()>deadline:raise ValueError('초기 지도 회전 응답 시간 초과')
+                self.stop_event.wait(.05)
+            check();return future.result()
+        try:
+            if not self.spin_client.server_is_ready():raise ValueError('Nav2 Spin 준비 실패')
+            for angle in self.startup_survey['angles_rad']:
+                check();goal=self.spin_goal_type.Goal();goal.target_yaw=angle
+                goal.time_allowance=Duration(sec=40)
+                handle=wait(self.spin_client.send_goal_async(goal),time.monotonic()+5)
+                if not handle.accepted:raise ValueError('Nav2 초기 지도 회전 거절')
+                self.handle=handle
+                result=wait(handle.get_result_async(),time.monotonic()+42)
+                self.startup_survey['results'].append({'angle_rad':angle,'status':result.status})
+                if result.status!=4:raise ValueError('Nav2 초기 지도 회전 실패')
+                with self.app.control.lock:self.guard.stop()
+            pose=check()
+            yaw_error=abs((self.last_wheel_pose[2]-wheel_origin[2]+math.pi)%(2*math.pi)-math.pi)
+            self.startup_survey['final_heading_error_rad']=yaw_error
+            if yaw_error>.15:raise ValueError('초기 지도 회전 후 방향 복구 실패')
+            # Wait for a map observed after the last rotation. No map cells are
+            # rewritten or declared free by this initialization step.
+            end=time.monotonic();deadline=end+5
+            while self.grid is None or self.grid.received_at<end:
+                check()
+                if time.monotonic()>deadline:raise ValueError('회전 후 지도 갱신 대기 시간 초과')
+                self.stop_event.wait(.1)
+            planner=Planner(self.grid,pose,pose[:2],limits)
+            if self.grid.cell(*pose[:2]) not in planner.safe:
+                raise ValueError('초기 지도 회전 후에도 출발 공간 확인 실패')
+            self.startup_survey['state']='complete'
+        except Exception:
+            self.startup_survey['state']='failed'
+            if self.handle:self.handle.cancel_goal_async()
+            raise
+        finally:
+            with self.app.control.lock:self.guard.stop()
+            self.guard.set_limits(.03*self.speed_multiplier,.15*self.speed_multiplier)
+
     def run(self,measured,limits,task):
         recorder=self.app.recorder;previous_profile=dict(recorder.profile);previous_slam_config=recorder.slam_config
         maintenance=None;log=None;lifecycle_clients={}
@@ -334,6 +412,13 @@ class Autonomy:
                 nav['planner_server']['ros__parameters'].setdefault(plugin,{})['allow_unknown']=False
             for name in ('global_costmap','local_costmap'):
                 nav[name][name]['ros__parameters']['track_unknown_space']=True
+            # Initial Spin stays within the operator-confirmed circular envelope.
+            # The local obstacle layer uses live returns; global planning still
+            # rejects unknown space, and Mission retains its observed-path checks.
+            if self.initial_scan_rotation:
+                nav['local_costmap']['local_costmap']['ros__parameters']['track_unknown_space']=False
+                behavior=nav['behavior_server']['ros__parameters']
+                behavior.update(max_rotational_vel=.15,min_rotational_vel=.05,rotational_acc_lim=.4)
             if self.mission.round_trip_distance is not None:
                 nav['controller_server']['ros__parameters']['general_goal_checker']['xy_goal_tolerance']=.05
                 nav['controller_server']['ros__parameters']['FollowPath']['xy_goal_tolerance']=.05
@@ -343,6 +428,10 @@ class Autonomy:
                 base_frame=sensor['base_frame'],odom_frame=sensor['odom_frame'],map_frame='map',map_update_interval=1.,resolution=.05)
             if self.mission.round_trip_distance is not None:
                 slam['slam_toolbox']['ros__parameters'].update(minimum_travel_distance=.05,minimum_travel_heading=.05)
+            if self.initial_scan_rotation:
+                # Jazzy versions can reject pure rotations in the initial
+                # translation-distance gate. Bound scan processing to 4 Hz.
+                slam['slam_toolbox']['ros__parameters'].update(minimum_travel_distance=0.,minimum_travel_heading=.05,minimum_time_interval=.25)
             (self.run_dir/'slam.yaml').write_text(yaml.safe_dump(slam))
             log=(self.run_dir/'stack.log').open('w')
             self.process=subprocess.Popen(['ros2','launch',str(ROOT/'tools/live_patrol_stack.py'),
@@ -373,6 +462,8 @@ class Autonomy:
             if self.stop_event.is_set():return
             self.guard=NavigationGuard(self.backend)
             self.guard.set_limits(.03*self.speed_multiplier,.15*self.speed_multiplier)
+            if self.initial_scan_rotation:self.survey_start(sensor,limits)
+            if self.stop_event.is_set():return
             self.phase='running';self.last_planner=time.monotonic()
             while not self.stop_event.wait(.2):
                 while not self.results.empty():
@@ -414,6 +505,7 @@ class Autonomy:
             if self.filtered_publisher:self.backend.node.destroy_publisher(self.filtered_publisher)
             self.filtered_publisher=None;self.navigation_scan_topic=None
             if hasattr(self,'client'):self.client.destroy()
+            if hasattr(self,'spin_client'):self.spin_client.destroy()
             if hasattr(self,'listener'):self.listener.unregister()
             if log:log.close()
             if maintenance:maintenance.__exit__(None,None,None)

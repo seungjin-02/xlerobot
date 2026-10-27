@@ -72,6 +72,7 @@ class Limits:
     coverage_radius: float = .25
     min_goal_distance: float = .3
     max_failures: int = 8
+    known_body_radius: float = 0.
 
     def __post_init__(self):
         positives = ('robot_radius','max_radius','max_duration','max_distance','goal_timeout',
@@ -80,6 +81,8 @@ class Limits:
             raise ValueError('Limits must be finite and positive')
         if not .05 <= self.robot_radius <= 2 or not finite(self.margin) or self.margin < 0:
             raise ValueError('Invalid radius or margin')
+        if not finite(self.known_body_radius) or not 0<=self.known_body_radius<=min(.10,self.robot_radius):
+            raise ValueError('Invalid known body radius')
         if self.max_radius <= self.robot_radius+self.margin:
             raise ValueError('Operating radius too small')
         if type(self.cycles) is not int or not 1 <= self.cycles <= 100:
@@ -100,6 +103,13 @@ class Goal:
 
 class Planner:
     def __init__(self, grid, pose, home, limits):
+        # Only the confirmed solid central body already occupies this area.
+        # Handle its sensor-origin blind cells without clearing ANY obstacle or
+        # cells outside that body. The conservative outer radius is unchanged.
+        if limits.known_body_radius:
+            data=tuple(0 if v==-1 and math.dist(grid.world(i),pose[:2])+grid.resolution*math.sqrt(.5)<=limits.known_body_radius else v
+                       for i,v in enumerate(grid.data))
+            grid=Grid(grid.width,grid.height,grid.resolution,data,grid.origin_x,grid.origin_y,grid.origin_yaw,grid.received_at)
         self.grid, self.pose, self.home, self.limits = grid, pose, home, limits
         # Eight-neighbor unit distance is Chebyshev distance, a conservative lower
         # bound on Euclidean distance. Subtract cell half-diagonal via the threshold.

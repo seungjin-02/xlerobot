@@ -17,6 +17,16 @@ class RoundTripStartTests(unittest.TestCase):
    thread.return_value.start.assert_called_once()
   self.assertEqual(a.mission.round_trip_distance,1.);self.assertEqual(a.mission.limits.max_distance,2.4)
   self.assertEqual(a.public_limits['max_linear_m_s'],.03);a.backend.arm.assert_not_called();a.backend.publish.assert_not_called()
+ def test_scan_rotation_requires_explicit_clearance(self):
+  for data in [{'initial_scan_rotation':True},{'initial_scan_rotation':'true'},{'initial_scan_rotation':True,'rotation_clearance_confirmed':1}]:
+   a=self.app()
+   with patch('autonomy.threading.Thread') as thread:
+    with self.assertRaises(ValueError):a.start('owner',data)
+    thread.assert_not_called()
+  a=self.app()
+  with patch('autonomy.threading.Thread'):
+   a.start('owner',{'initial_scan_rotation':True,'rotation_clearance_confirmed':True})
+  self.assertTrue(a.initial_scan_rotation);a.backend.arm.assert_not_called()
  def test_invalid_mode_distance_or_radius_never_starts_thread(self):
   for body in [{'mode':'bad'},{'mode':'round_trip','target_distance':True},{'mode':'round_trip','target_distance':1.1},{'mode':'round_trip','max_radius':1.}]:
    a=self.app()
