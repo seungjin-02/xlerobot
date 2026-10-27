@@ -19,15 +19,19 @@ from ros_slam_integration import Room
 from ros_navigation_integration import FakeMotor
 
 
-def run(output,round_trip=False,survey=False,target_distance=1.):
+def run(output,round_trip=False,survey=False,target_distance=1.,straight=False):
     os.environ['ROS_DOMAIN_ID']='185';os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE']='LOCALHOST'
     import rclpy
     rclpy.init()
     class Backend(FakeMotor):
         def __init__(self):
-            super().__init__();self.node=rclpy.create_node('synthetic_patrol_backend')
+            super().__init__();self.peak_lateral=0.;self.peak_angular=0.;self.min_x=0.;self.max_x=0.;self.node=rclpy.create_node('synthetic_patrol_backend')
             self.output_parameters={'demo':True,'base_frame':'base_footprint','odom_frame':'odom'}
         def poll(self):rclpy.spin_once(self.node,timeout_sec=0)
+        def publish(self,value):
+            self.peak_lateral=max(self.peak_lateral,abs(value[1]));self.peak_angular=max(self.peak_angular,abs(value[2]))
+            self.min_x=min(self.min_x,value[0]);self.max_x=max(self.max_x,value[0])
+            return super().publish(value)
         def _ensure_base(self):pass
         def observation(self):return {'received_ns':time.monotonic_ns(),'ros_stamp_ns':self.node.get_clock().now().nanoseconds,'values':[*room.position,*self.output]}
     backend=Backend();room=Room(backend.node,backend,wheel_shadows=survey)
@@ -44,7 +48,8 @@ def run(output,round_trip=False,survey=False,target_distance=1.):
     worker=threading.Thread(target=app.run);worker.start()
     try:
         mission_data={'max_radius':1.5 if round_trip else 1.,'max_duration':120. if round_trip else 25.,'cycles':1,'task':'synthetic online SLAM patrol'}
-        if round_trip:mission_data.update(mode='round_trip',target_distance=target_distance,max_distance=2*target_distance+.4)
+        if round_trip:mission_data.update(mode='straight_round_trip' if straight else 'round_trip',target_distance=target_distance,max_distance=2*target_distance+.4)
+        if straight:mission_data.update(speed_multiplier=1)
         if survey:mission_data.update(initial_scan_rotation=True,rotation_clearance_confirmed=True,speed_multiplier=1)
         app.autonomy.start('synthetic-owner',mission_data)
         ready_deadline=time.monotonic()+(140 if survey else 50)
@@ -81,11 +86,12 @@ def run(output,round_trip=False,survey=False,target_distance=1.):
         assert successful>=1 and backend.arms>=1,(successful,backend.arms,status)
         assert not backend.ready and backend.output==(0.,0.,0.)
         assert 0<backend.peak<=.100001
+        if straight:assert backend.peak_lateral==0. and backend.peak_angular==0. and backend.min_x<0.<backend.max_x
         report={'synthetic':True,'physics_engine':False,'physical_hardware_tested':False,
             'online_slam_used':True,'nav2_action_goals_succeeded':successful,'mission':status['mission'],
             'episode_complete':meta['complete'],'slam_valid_for_mapping':meta['slam']['valid_for_mapping'],
             'scan_messages':meta['slam']['counts']['/scan'],'valid_visual_training_samples':meta['valid_samples'],
-            'peak_guarded_linear_m_s':backend.peak,'motor_ready_after_stop':backend.ready,'output_after_stop':backend.output,
+            'peak_guarded_linear_m_s':backend.peak,'peak_guarded_lateral_m_s':backend.peak_lateral,'peak_guarded_angular_rad_s':backend.peak_angular,'minimum_guarded_x_m_s':backend.min_x,'maximum_guarded_x_m_s':backend.max_x,'motor_ready_after_stop':backend.ready,'output_after_stop':backend.output,
             'control_mode':meta['device_profile']['control_mode'],'outcome':meta['outcome']}
         (output/'integration-report.json').write_text(json.dumps(report,indent=2))
         print(json.dumps(report,indent=2))
@@ -98,4 +104,4 @@ def run(output,round_trip=False,survey=False,target_distance=1.):
         backend.node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--round-trip',action='store_true');p.add_argument('--survey',action='store_true');p.add_argument('--distance',type=float,default=1.);a=p.parse_args();run(a.output,a.round_trip,a.survey,a.distance)
+    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--round-trip',action='store_true');p.add_argument('--survey',action='store_true');p.add_argument('--distance',type=float,default=1.);p.add_argument('--straight',action='store_true');a=p.parse_args();run(a.output,a.round_trip or a.straight,a.survey,a.distance,a.straight)

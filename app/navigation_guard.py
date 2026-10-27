@@ -30,10 +30,12 @@ class NavigationGuard:
         ratio=min(1.,self.max_linear/math.hypot(x,y)) if x or y else 1.
         return x*ratio,y*ratio,max(-self.max_angular,min(self.max_angular,yaw))
 
-    def receive(self, motion):
+    def receive(self, motion,straight=False):
         if self.fault: return
         if len(motion) != 3 or not all(math.isfinite(value) for value in motion):
             self.stop('비정상 Nav2 속도 명령'); return
+        if straight and (abs(motion[1])>1e-6 or abs(motion[2])>1e-6):
+            self.stop('전진·후진 시험에서 옆 이동·회전 명령 감지');return
         self.command = self.capped(motion)
         self.received = self.clock()
 

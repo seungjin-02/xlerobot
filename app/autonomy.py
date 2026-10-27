@@ -58,7 +58,7 @@ class Autonomy:
         self.episode=None;self.calibration_error=None
         self.recording_expected=False;self.return_requested=False
         self.filtered_publisher=None;self.navigation_scan_topic=None
-        self.speed_multiplier=3
+        self.speed_multiplier=1
         try:calibration(config)
         except ValueError as e:self.calibration_error=str(e)
 
@@ -73,7 +73,8 @@ class Autonomy:
                 'blocked_reason':'실물 ROS 센서가 없는 데모에서는 자율주행을 시작하지 않습니다' if isinstance(self.backend,DemoBackend) else self.calibration_error,
                 'error':self.error,'startup_survey':getattr(self,'startup_survey',None),'fault_sensor_health':getattr(self,'fault_sensor_health',None),'recording_episode':self.episode,'mission':self.last_report,
                 'limits':getattr(self,'public_limits',None),'paused':self.paused,
-                'recording_required':False,'local_only':True,'sensor_health':sensor_health,'speed_multiplier':self.speed_multiplier}
+                'recording_required':False,'local_only':True,'sensor_health':sensor_health,'speed_multiplier':self.speed_multiplier,
+                'output_motion':list(self.guard.output) if self.guard else [0.,0.,0.]}
 
     def map_view(self):
         grid=self.grid
@@ -98,29 +99,31 @@ class Autonomy:
             if isinstance(self.backend,DemoBackend):raise ValueError('데모에서 실물 자율주행은 시작하지 않습니다')
             measured=calibration(self.config)
             mode=data.get('mode','patrol')
-            if mode not in ('patrol','round_trip'):raise ValueError('알 수 없는 운행 방식')
+            if mode not in ('patrol','round_trip','straight_round_trip'):raise ValueError('알 수 없는 운행 방식')
+            straight=mode=='straight_round_trip';round_trip=mode!='patrol'
             survey=data.get('initial_scan_rotation',False)
             if type(survey) is not bool:raise ValueError('초기 회전 설정은 boolean입니다')
+            if straight and survey:raise ValueError('전진·후진 시험에서는 초기 회전을 사용할 수 없습니다')
             if survey and data.get('rotation_clearance_confirmed') is not True:
                 raise ValueError('제자리 회전 전 모든 방향의 외곽 여유 공간을 확인하세요')
-            round_trip_distance=data.get('target_distance',1.) if mode=='round_trip' else None
+            round_trip_distance=data.get('target_distance',.8) if round_trip else None
             # Validate the mission before changing controller/session state.
-            if mode=='round_trip' and (isinstance(round_trip_distance,bool) or not finite(round_trip_distance) or not .1<=round_trip_distance<=1.):
+            if round_trip and (isinstance(round_trip_distance,bool) or not finite(round_trip_distance) or not .1<=round_trip_distance<=1.):
                 raise ValueError('왕복 목표 거리는 0.1~1m여야 합니다')
             max_distance=data.get('max_distance',50.)
-            if mode=='round_trip':
+            if round_trip:
                 if not finite(max_distance) or isinstance(max_distance,bool):raise ValueError('잘못된 누적 이동 제한')
                 max_distance=min(max_distance,2*round_trip_distance+.4)
             limits=Limits(measured['robot_radius'],max_radius=data.get('max_radius',3.),
                 max_duration=data.get('max_duration',600.),max_distance=max_distance,cycles=data.get('cycles',2),
-                goal_timeout=90. if mode=='round_trip' else 45.,
+                goal_timeout=90. if round_trip else 45.,
                 known_body_radius=self.config.get('patrol',{}).get('calibration',{}).get('known_body_radius',0.))
-            if mode=='round_trip' and round_trip_distance+limits.robot_radius+limits.margin>limits.max_radius:
+            if round_trip and round_trip_distance+limits.robot_radius+limits.margin>limits.max_radius:
                 raise ValueError('출발점 반경은 목표 거리와 로봇 외곽·여유 공간보다 커야 합니다')
             if limits.max_radius>10 or limits.max_duration>3600 or limits.max_distance>500:
                 raise ValueError('시험 범위는 반경 10m·시간 3600초·총 경로 500m 이하여야 합니다')
             task=str(data.get('task','자동 탐색 및 순회')).strip()
-            multiplier=data.get('speed_multiplier',3)
+            multiplier=data.get('speed_multiplier',1)
             self.validate_speed(multiplier)
             self.speed_multiplier=multiplier
             if not 1<=len(task)<=240:raise ValueError('작업명을 1~240자로 입력하세요')
@@ -129,9 +132,9 @@ class Autonomy:
             self.recording_expected=False;self.return_requested=False
             self.generation=getattr(self,'generation',0)+1
             self.results=queue.SimpleQueue();self.guard=None;self.handle=None;self.last_report=None;self.episode=None
-            self.stop_event.clear();self.outcome='unfinished';self.mission=Mission(limits,round_trip_distance);self.grid=None
+            self.stop_event.clear();self.outcome='unfinished';self.mission=Mission(limits,round_trip_distance,straight=straight);self.grid=None
             self.public_limits={'max_radius_m':limits.max_radius,'max_duration_s':limits.max_duration,
-                                'max_distance_m':limits.max_distance,'cycles':limits.cycles,'max_linear_m_s':.03*multiplier,'max_angular_rad_s':.15*multiplier,
+                                'max_distance_m':limits.max_distance,'cycles':limits.cycles,'max_linear_m_s':.03*multiplier,'max_angular_rad_s':0. if straight else .15*multiplier,
                                 'mode':mode,'target_distance_m':round_trip_distance}
             self.thread=threading.Thread(target=self.run,args=(measured,limits,task),daemon=True)
             self.thread.start()
@@ -163,7 +166,7 @@ class Autonomy:
         with self.app.control.lock:
             if not self.busy or self.owner!=owner or self.phase!='running':raise ControlError('내 자율주행 운행 중에 속도를 변경하세요')
             self.speed_multiplier=multiplier
-            self.public_limits.update(max_linear_m_s=.03*multiplier,max_angular_rad_s=.15*multiplier)
+            self.public_limits.update(max_linear_m_s=.03*multiplier,max_angular_rad_s=0. if self.mission and self.mission.straight else .15*multiplier)
             if self.guard:self.guard.set_limits(.03*multiplier,.15*multiplier)
         self.app.recorder.event({'type':'autonomy_speed_changed','multiplier':multiplier,'max_linear_m_s':.03*multiplier})
 
@@ -279,7 +282,8 @@ class Autonomy:
             if self.guard and not self.paused and not self.stop_event.is_set():
                 if self.phase=='surveying' and math.hypot(message.linear.x,message.linear.y)>1e-6:
                     self.guard.stop('초기 지도 회전 중 직선 이동 명령');self.stop_event.set();return
-                self.guard.receive((message.linear.x,message.linear.y,message.angular.z))
+                self.guard.receive((message.linear.x,message.linear.y,message.angular.z),straight=self.mission.straight)
+                if self.guard.fault:self.error=self.guard.fault;self.stop_event.set()
         self.subscriptions.append(node.create_subscription(Twist,'/nav2_cmd_vel',command,10))
 
     def read_pose(self,base_frame):
@@ -436,6 +440,14 @@ class Autonomy:
             if self.mission.round_trip_distance is not None:
                 nav['controller_server']['ros__parameters']['general_goal_checker']['xy_goal_tolerance']=.05
                 nav['controller_server']['ros__parameters']['FollowPath']['xy_goal_tolerance']=.05
+            if self.mission.straight:
+                drive=nav['controller_server']['ros__parameters']['FollowPath']
+                drive.update(min_vel_y=0.,max_vel_y=0.,max_vel_theta=0.,min_speed_theta=0.,vy_samples=1,vtheta_samples=1)
+                drive['critics']=[name for name in drive['critics'] if name!='RotateToGoal']
+                nav['controller_server']['ros__parameters']['general_goal_checker']['yaw_goal_tolerance']=.05
+                tree=self.run_dir/'straight-navigation.xml'
+                tree.write_text('<root BTCPP_format="4" main_tree_to_execute="MainTree"><BehaviorTree ID="MainTree"><PipelineSequence><RateController hz="1.0"><ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/></RateController><FollowPath path="{path}" controller_id="FollowPath"/></PipelineSequence></BehaviorTree></root>')
+                nav['bt_navigator']['ros__parameters']['default_nav_to_pose_bt_xml']=str(tree)
             (self.run_dir/'nav2.yaml').write_text(yaml.safe_dump(nav))
             slam=yaml.safe_load((Path(get_package_share_directory('slam_toolbox'))/'config/mapper_params_online_async.yaml').read_text())
             slam['slam_toolbox']['ros__parameters'].update(use_sim_time=False,mode='mapping',scan_topic=navigation_sensor['scan_topic'],

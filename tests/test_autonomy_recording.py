@@ -15,7 +15,7 @@ class IndependentRecordingTests(unittest.TestCase):
         self.a=Autonomy(self.app,{})
         self.a.owner='owner';self.a.phase='running';self.a.thread=Mock();self.a.thread.is_alive.return_value=True
         self.a.public_limits={'max_radius_m':1.};self.a.last_report={'state':'exploring'}
-        self.a.guard=Mock(fault=None);self.a.health=Mock();self.a.health.report.return_value={'ready':True}
+        self.a.guard=Mock(fault=None,output=(0.,0.,0.));self.a.health=Mock();self.a.health.report.return_value={'ready':True}
         self.a.last_planner=time.monotonic()
     def test_confirmed_bound_preserves_estimated_pose_provenance(self):
         value={'measured':False,'geometry_mode':'confirmed_conservative_envelope',
@@ -42,6 +42,9 @@ class IndependentRecordingTests(unittest.TestCase):
         self.a.guard.tick.assert_called_once_with(True)
         self.a.guard.stop.assert_not_called()
         self.assertFalse(self.a.status('owner')['recording_required'])
+    def test_status_reports_navigation_guard_output(self):
+        self.a.guard.output=(.02,-.01,.05)
+        self.assertEqual(self.a.status('owner')['output_motion'],[.02,-.01,.05])
     def test_record_tab_can_start_and_finish_without_stopping_drive(self):
         self.assertEqual(self.a.start_recording('owner','training',False),'episode-test')
         self.assertEqual(self.app.recorder.profile['control_mode'],'autonomous')
