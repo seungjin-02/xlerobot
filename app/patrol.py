@@ -182,7 +182,9 @@ class Planner:
 
 
 class Mission:
-    def __init__(self, limits):
+    def __init__(self, limits, round_trip_distance=None):
+        if round_trip_distance is not None and (isinstance(round_trip_distance,bool) or not finite(round_trip_distance) or not .1<=round_trip_distance<=1.):
+            raise ValueError('왕복 목표 거리는 0.1~1m여야 합니다')
         self.limits = limits; self.state = 'waiting'; self.reason = None
         self.home = None; self.started = self.previous_time = self.last_pose = None
         self.trail = []; self.cycle_trail = []; self.failed = []
@@ -192,6 +194,8 @@ class Mission:
         self.return_started = None; self.events = []
         self.known_cells = 0; self.known_at_send = 0
         self.cached_planner = None; self.cached_map = None
+        self.round_trip_distance=round_trip_distance;self.outbound_reached=False
+        self.start_heading=None;self.outbound_target=None
 
     def command(self, action, goal=None):
         result = {'action':action,'state':self.state,'reason':self.reason,'token':self.sequence,'goal':goal}
@@ -215,12 +219,23 @@ class Mission:
     def result(self, token, outcome):
         if outcome not in ('succeeded','failed','canceled'): raise ValueError('Unknown action outcome')
         if token != self.sequence or self.active is None: return False
+        self.events.append({'event':'navigation_result','token':token,'kind':self.active.kind,
+                            'outcome':outcome,'cancel_pending':self.cancelling})
         if self.cancelling:
             self.active = None; self.cancelling = False; self.state = self.after_cancel
             return True
         if self.state in ('fault','stopped','blocked','complete','paused'): return False
         goal = self.active; self.active = None
-        if outcome == 'succeeded' and self.last_pose and math.dist(self.last_pose[:2],(goal.x,goal.y)) <= .25:
+        if goal.kind in ('outbound','outbound_stage'):
+            if outcome=='succeeded' and self.last_pose and math.dist(self.last_pose[:2],(goal.x,goal.y))<=.10:
+                if goal.kind=='outbound':
+                    self.outbound_reached=True;self.state='returning';self.reason='outbound_goal_reached'
+                else:self.state='outbound';self.reason='safe_waypoint_reached'
+            else:
+                self.failures+=1;self.state='blocked';self.reason='outbound_goal_failed'
+            return True
+        tolerance=.10 if self.round_trip_distance is not None else .25
+        if outcome == 'succeeded' and self.last_pose and math.dist(self.last_pose[:2],(goal.x,goal.y)) <= tolerance:
             if goal.kind == 'return': self.state = 'complete'; self.reason = 'returned_home'
             elif goal.kind == 'explore' and self.known_cells <= self.known_at_send:
                 self.failed.append((goal.x,goal.y)); self.failures += 1
@@ -249,11 +264,20 @@ class Mission:
             return self.halt('fault','stale_sensor_map_or_pose',now)
         if self.home is None:
             self.home = tuple(pose[:2]); self.started = now; self.state = 'exploring'
+            self.start_heading=pose[2]
+            if self.round_trip_distance is not None:
+                self.outbound_target=(pose[0]+self.round_trip_distance*math.cos(pose[2]),pose[1]+self.round_trip_distance*math.sin(pose[2]))
         if self.last_pose is not None:
             delta = math.dist(pose[:2],self.last_pose[:2])
             if delta > 1.: return self.halt('fault','localization_jump',now)
             self.distance += delta
         self.last_pose = tuple(pose)
+        if self.round_trip_distance is not None:
+            dx,dy=pose[0]-self.home[0],pose[1]-self.home[1]
+            lateral=-dx*math.sin(self.start_heading)+dy*math.cos(self.start_heading)
+            forward=dx*math.cos(self.start_heading)+dy*math.sin(self.start_heading)
+            if abs(lateral)>.10:return self.halt('fault','round_trip_lateral_limit',now)
+            if forward>self.round_trip_distance+.10:return self.halt('fault','round_trip_overshoot',now)
         self.known_cells = sum(v != -1 for v in grid.data)
         if not self.trail or math.dist(pose[:2],self.trail[-1]) >= grid.resolution*.4:
             self.trail.append(tuple(pose[:2])); self.cycle_trail.append(tuple(pose[:2]))
@@ -277,16 +301,40 @@ class Mission:
                     or any(grid.cell(*p) not in planner.safe for p in self.active.path)):
                 if grid.cell(self.active.x,self.active.y) not in planner.parents:
                     self.failed.append((self.active.x,self.active.y));self.failures += 1
+                if self.round_trip_distance is not None:return self.halt('blocked','round_trip_path_blocked',now)
                 return self.halt('exploring','active_path_changed',now)
             if now-self.active_since > self.limits.goal_timeout:
                 self.failed.append((self.active.x,self.active.y));self.failures += 1
+                if self.round_trip_distance is not None:return self.halt('blocked','round_trip_goal_timeout',now)
                 return self.halt('exploring','goal_timeout',now)
             if now-self.started >= self.limits.max_duration and self.active.kind != 'return':
                 return self.halt('returning','duration_limit',now)
             return self.command('wait')
         returning = (self.state == 'returning' or now-self.started >= self.limits.max_duration
                      or self.failures >= self.limits.max_failures or self.cycles >= self.limits.cycles)
-        goal = None if returning else planner.select(self.cycle_trail,self.failed)
+        goal = None
+        if not returning and self.round_trip_distance is not None:
+            returning=self.outbound_reached
+            if not returning:
+                remaining=math.dist(pose[:2],self.outbound_target)
+                count=max(1,math.ceil(remaining/(grid.resolution*.5)))
+                path=tuple((pose[0]+(self.outbound_target[0]-pose[0])*i/count,
+                            pose[1]+(self.outbound_target[1]-pose[1])*i/count) for i in range(count+1))
+                safe_prefix=[]
+                for point in path:
+                    if grid.cell(*point) not in planner.safe:break
+                    safe_prefix.append(point)
+                if len(safe_prefix)==len(path):
+                    goal=Goal(*self.outbound_target,self.start_heading,'outbound',path,remaining)
+                else:
+                    # Explore only a verified footprint-clear prefix of the same
+                    # straight corridor; never send Nav2 into unseen goal space.
+                    candidates=[(i,p) for i,p in enumerate(safe_prefix) if .15<=math.dist(pose[:2],p)<=.30]
+                    if not candidates:return self.halt('blocked','outbound_corridor_not_clear',now)
+                    index,point=candidates[-1]
+                    goal=Goal(*point,self.start_heading,'outbound_stage',tuple(safe_prefix[:index+1]),math.dist(pose[:2],point))
+        elif not returning:
+            goal=planner.select(self.cycle_trail,self.failed)
         if goal is None and not returning:
             if self.failed:
                 return self.halt('blocked','reachable_targets_exhausted_after_failures',now)
@@ -301,16 +349,23 @@ class Mission:
         if returning:
             self.state = 'returning'
             if self.return_started is None: self.return_started = now
-            if math.dist(pose[:2],self.home) <= .15:
+            if math.dist(pose[:2],self.home) <= (.05 if self.round_trip_distance is not None else .15):
                 return self.halt('complete','finished_at_home',now)
             if home is None: return self.halt('blocked','home_unreachable',now)
+            if self.round_trip_distance is not None:
+                home=Goal(self.home[0],self.home[1],self.start_heading,home.kind,
+                          home.path+(self.home,),home.path_length+math.dist(home.path[-1],self.home))
             goal = home
         self.active = goal; self.active_since = now; self.sequence += 1; self.known_at_send = self.known_cells
-        self.state = 'returning' if goal.kind == 'return' else ('exploring' if goal.kind == 'explore' else 'patrolling')
+        self.state = 'returning' if goal.kind == 'return' else ('outbound' if goal.kind in ('outbound','outbound_stage') else ('exploring' if goal.kind == 'explore' else 'patrolling'))
         return self.command('send_goal',goal)
 
     def report(self):
         return {'state':self.state,'reason':self.reason,'distance_m':self.distance,'cycles_finished':self.cycles,
                 'goals_sent':self.sequence,'goal_failures':self.failures,'home':self.home,
                 'active_goal_kind':self.active.kind if self.active else None,'cancel_pending':self.cancelling,
-                'physical_motion_verified':False}
+                'physical_motion_verified':False,'task_mode':'round_trip' if self.round_trip_distance is not None else 'patrol',
+                'target_distance_m':self.round_trip_distance,'outbound_target':self.outbound_target,
+                'outbound_reached':self.outbound_reached,
+                'navigation_results':[e for e in self.events if e.get('event')=='navigation_result'][-20:],
+                'round_trip_completed':self.round_trip_distance is not None and self.outbound_reached and self.state=='complete' and self.reason in ('returned_home','finished_at_home')}

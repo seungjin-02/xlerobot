@@ -6,6 +6,13 @@ function renderAutonomy(){
   if(!$('autonomyStart'))return;
   const busy=!!a?.busy, mine=!!a?.mine;
   if(busy && !autonomySpeedBusy)autonomySpeed=a.speed_multiplier||3;
+  if(busy && a.limits){
+    $('autonomyMode').value=a.limits.mode||'patrol';
+    if(a.limits.target_distance_m!=null)$('roundTripDistance').value=a.limits.target_distance_m;
+    $('autonomyRadius').value=a.limits.max_radius_m;
+    $('autonomyMinutes').value=a.limits.max_duration_s/60;
+    $('autonomyCycles').value=a.limits.cycles;
+  }
   $('autonomySpeed').value=autonomySpeed;
   $('autonomySpeedValue').textContent=autonomySpeed+'배';
   $('autonomySpeedDetail').textContent=`이동 요청 상한 ${(autonomySpeed*.03).toFixed(2)} m/s · 회전 요청 상한 ${(autonomySpeed*.15).toFixed(2)} rad/s`;
@@ -17,13 +24,17 @@ function renderAutonomy(){
   $('autonomyResume').disabled=!mine || !a?.paused || autonomyBusy;
   $('autonomyStop').disabled=!busy || autonomyBusy;
   $('autonomyReturn').disabled=!mine || a?.phase!=='running' || autonomyBusy;
-  for(const id of ['autonomyTask','autonomyRadius','autonomyMinutes','autonomyCycles'])$(id).disabled=busy;
+  for(const id of ['autonomyTask','autonomyRadius','autonomyMinutes','autonomyCycles','autonomyMode','roundTripDistance'])$(id).disabled=busy;
+  const roundTrip=$('autonomyMode').value==='round_trip';
+  $('roundTripSettings').hidden=!roundTrip;
+  $('autonomyCycles').disabled=busy||roundTrip;
   const names={idle:'대기',starting:'센서·SLAM 준비 중',running:'자동 운행',stopping:'정지·기록 저장 중',fault:'오류'};
   $('autonomyState').textContent=a?.error || a?.blocked_reason || (a?.paused?'일시정지':names[a?.phase]||'상태 확인 중');
   const m=a?.mission;
-  const states={waiting:'준비',exploring:'미탐색 영역 탐색',patrolling:'순회',returning:'출발점 복귀',paused:'일시정지',complete:'완료',blocked:'경로 확보 불가',fault:'오류로 정지',stopped:'종료'};
-  const reasons={returned_home:'출발점 복귀 완료',operator_stop:'사용자 종료',return_failed:'복귀 경로 이동 실패',return_distance_reserve:'복귀 거리 확보',cancel_ack_timeout:'목표 취소 응답 시간 초과'};
+  const states={outbound:'전방 목표로 이동',waiting:'준비',exploring:'미탐색 영역 탐색',patrolling:'순회',returning:'출발점 복귀',paused:'일시정지',complete:'완료',blocked:'경로 확보 불가',fault:'오류로 정지',stopped:'종료'};
+  const reasons={safe_waypoint_reached:'안전 구간 도착·다음 경로 확인',outbound_goal_reached:'전방 목표 도착·복귀 준비',outbound_goal_failed:'전방 목표 이동 실패',outbound_corridor_not_clear:'전방 목표까지 안전한 경로 확보 불가',round_trip_path_blocked:'경로가 막혀 왕복 종료',round_trip_goal_timeout:'목표 이동 시간 초과',round_trip_lateral_limit:'통로 이탈로 정지',round_trip_overshoot:'목표 거리 초과로 정지',returned_home:'출발점 복귀 완료',operator_stop:'사용자 종료',return_failed:'복귀 경로 이동 실패',return_distance_reserve:'복귀 거리 확보',cancel_ack_timeout:'목표 취소 응답 시간 초과'};
   $('autonomyProgress').textContent=m?`상태 ${states[m.state]||m.state} · 이동 ${Number(m.distance_m).toFixed(2)}m · 목표 ${m.goals_sent}개 · 완료 순회 ${m.cycles_finished}회${m.reason?' · '+(reasons[m.reason]||m.reason):''}`:'지도·좌표·센서가 준비되면 시작할 수 있습니다.';
+  if(m?.task_mode==='round_trip')$('autonomyProgress').textContent=`${states[m.state]||m.state} · 전방 목표 ${m.target_distance_m}m · 누적 이동 ${Number(m.distance_m).toFixed(2)}m · ${m.round_trip_completed?'왕복 완료':m.outbound_reached?'전방 목표 도착 확인':'전방 목표 도착 전'}${m.reason?' · '+(reasons[m.reason]||m.reason):''}`;
   if(busy){$('badge').textContent=a.paused?'자동 순회 일시정지':'자동 탐색·순회';$('controlSummary').textContent+=' · 자동 운행';}
   if(currentScreen==='autonomy' && !autonomyMapBusy && Date.now()-autonomyMapAt>1500)refreshAutonomyMap();
 }
@@ -48,7 +59,7 @@ async function refreshAutonomyMap(){
 async function autonomyAction(action){
   if(autonomyBusy)return;autonomyBusy=true;render();
   try{
-    const body=action==='start'?{task:$('autonomyTask').value,max_radius:Number($('autonomyRadius').value),max_duration:Number($('autonomyMinutes').value)*60,cycles:Number($('autonomyCycles').value),max_distance:50,speed_multiplier:autonomySpeed}:{};
+    const body=action==='start'?{task:$('autonomyTask').value,max_radius:Number($('autonomyRadius').value),max_duration:Number($('autonomyMinutes').value)*60,cycles:Number($('autonomyCycles').value),max_distance:50,speed_multiplier:autonomySpeed,mode:$('autonomyMode').value,target_distance:Number($('roundTripDistance').value)}:{};
     await api('autonomy/'+action,body,10000);await refresh();
   }catch(e){message(e.message);}finally{autonomyBusy=false;render();}
 }
@@ -369,3 +380,5 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('autonomySpeed').addEventListener('input',()=>changeAutonomySpeed($('autonomySpeed').value));
   document.querySelectorAll('[data-autonomy-speed]').forEach(b=>b.addEventListener('click',()=>changeAutonomySpeed(b.dataset.autonomySpeed)));
 });
+
+document.addEventListener('DOMContentLoaded',()=>{$('autonomyMode').addEventListener('change',renderAutonomy);});

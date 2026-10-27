@@ -19,7 +19,7 @@ from ros_slam_integration import Room
 from ros_navigation_integration import FakeMotor
 
 
-def run(output):
+def run(output,round_trip=False):
     os.environ['ROS_DOMAIN_ID']='185';os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE']='LOCALHOST'
     import rclpy
     rclpy.init()
@@ -38,26 +38,39 @@ def run(output):
     app=App(backend,'synthetic-only',config);app.maintenance=Maintenance(output/'maintenance',required=False)
     worker=threading.Thread(target=app.run);worker.start()
     try:
-        app.autonomy.start('synthetic-owner',{'max_radius':1.,'max_duration':25.,'cycles':1,'task':'synthetic online SLAM patrol'})
+        mission_data={'max_radius':1.5 if round_trip else 1.,'max_duration':120. if round_trip else 25.,'cycles':1,'task':'synthetic online SLAM patrol'}
+        if round_trip:mission_data.update(mode='round_trip',target_distance=1.,max_distance=2.4)
+        app.autonomy.start('synthetic-owner',mission_data)
         ready_deadline=time.monotonic()+50
         while app.autonomy.busy and app.autonomy.phase=='starting' and time.monotonic()<ready_deadline:time.sleep(.1)
         assert app.autonomy.phase=='running',app.autonomy.status()
         assert not app.recorder.active,'Autonomy must not start recording automatically'
-        app.autonomy.start_recording('synthetic-owner','synthetic explicitly selected recording',slam=True)
-        deadline=time.monotonic()+110
+        if not round_trip:app.autonomy.start_recording('synthetic-owner','synthetic explicitly selected recording',slam=True)
+        deadline=time.monotonic()+(200 if round_trip else 110)
         while app.autonomy.busy and time.monotonic()<deadline:time.sleep(.2)
         if app.autonomy.busy:raise RuntimeError('Patrol did not finish within integration deadline')
         status=app.autonomy.status('synthetic-owner')
         (output/'integration-status.json').write_text(json.dumps(status,indent=2))
+        (output/'last-map.json').write_text(json.dumps(app.autonomy.map_view()))
         if status['error']:raise RuntimeError(status['error'])
-        episode=output/'episodes'/status['recording_episode']
-        meta=json.loads((episode/'episode.json').read_text())
-        events=[json.loads(line) for line in (episode/'commands.jsonl').read_text().splitlines()]
-        successful=sum(e.get('type')=='autonomy_goal_result' and e.get('outcome')=='succeeded' for e in events)
-        assert meta['complete'] and meta['slam']['valid_for_mapping'],meta
-        assert meta['slam']['config']['scan_topic']=='/scan_navigation'
-        assert meta['slam']['counts']['/scan']>0 and meta['slam']['counts']['/scan_navigation']>0
-        assert meta['device_profile']['control_mode']=='autonomous'
+        if round_trip:
+            events=status['mission']['navigation_results']
+            successful=sum(e['outcome']=='succeeded' and not e['cancel_pending'] for e in events)
+            assert status['mission']['round_trip_completed'],status
+            assert successful>=2,(successful,events)
+            assert {'outbound','return'}.issubset({e['kind'] for e in events if e['outcome']=='succeeded' and not e['cancel_pending']}),events
+            assert abs(room.position[0])<.15 and abs(room.position[1])<.15,room.position
+            assert status['recording_episode'] is None
+            meta={'complete':None,'slam':{'valid_for_mapping':None,'counts':{'/scan':status['sensor_health']['counts']['/scan']}},'valid_samples':0,'device_profile':{'control_mode':'autonomous'},'outcome':'not_recorded'}
+        else:
+            episode=output/'episodes'/status['recording_episode']
+            meta=json.loads((episode/'episode.json').read_text())
+            events=[json.loads(line) for line in (episode/'commands.jsonl').read_text().splitlines()]
+            successful=sum(e.get('type')=='autonomy_goal_result' and e.get('outcome')=='succeeded' for e in events)
+            assert meta['complete'] and meta['slam']['valid_for_mapping'],meta
+            assert meta['slam']['config']['scan_topic']=='/scan_navigation'
+            assert meta['slam']['counts']['/scan']>0 and meta['slam']['counts']['/scan_navigation']>0
+            assert meta['device_profile']['control_mode']=='autonomous'
         assert successful>=1 and backend.arms>=1,(successful,backend.arms,status)
         assert not backend.ready and backend.output==(0.,0.,0.)
         assert 0<backend.peak<=.100001
@@ -76,4 +89,4 @@ def run(output):
         backend.node.destroy_node();rclpy.shutdown()
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);a=p.parse_args();run(a.output)
+    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--round-trip',action='store_true');a=p.parse_args();run(a.output,a.round_trip)

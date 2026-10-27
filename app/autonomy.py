@@ -71,7 +71,7 @@ class Autonomy:
         return {'phase':self.phase,'busy':self.busy,'mine':self.busy and owner==self.owner,
                 'configured':self.calibration_error is None and not isinstance(self.backend,DemoBackend),
                 'blocked_reason':'실물 ROS 센서가 없는 데모에서는 자율주행을 시작하지 않습니다' if isinstance(self.backend,DemoBackend) else self.calibration_error,
-                'error':self.error,'recording_episode':self.episode,'mission':self.last_report,
+                'error':self.error,'fault_sensor_health':getattr(self,'fault_sensor_health',None),'recording_episode':self.episode,'mission':self.last_report,
                 'limits':getattr(self,'public_limits',None),'paused':self.paused,
                 'recording_required':False,'local_only':True,'sensor_health':sensor_health,'speed_multiplier':self.speed_multiplier}
 
@@ -97,8 +97,21 @@ class Autonomy:
                 raise ControlError('기존 조종·기록·자율주행을 먼저 종료하세요')
             if isinstance(self.backend,DemoBackend):raise ValueError('데모에서 실물 자율주행은 시작하지 않습니다')
             measured=calibration(self.config)
+            mode=data.get('mode','patrol')
+            if mode not in ('patrol','round_trip'):raise ValueError('알 수 없는 운행 방식')
+            round_trip_distance=data.get('target_distance',1.) if mode=='round_trip' else None
+            # Validate the mission before changing controller/session state.
+            if mode=='round_trip' and (isinstance(round_trip_distance,bool) or not finite(round_trip_distance) or not .1<=round_trip_distance<=1.):
+                raise ValueError('왕복 목표 거리는 0.1~1m여야 합니다')
+            max_distance=data.get('max_distance',50.)
+            if mode=='round_trip':
+                if not finite(max_distance) or isinstance(max_distance,bool):raise ValueError('잘못된 누적 이동 제한')
+                max_distance=min(max_distance,2*round_trip_distance+.4)
             limits=Limits(measured['robot_radius'],max_radius=data.get('max_radius',3.),
-                max_duration=data.get('max_duration',600.),max_distance=data.get('max_distance',50.),cycles=data.get('cycles',2))
+                max_duration=data.get('max_duration',600.),max_distance=max_distance,cycles=data.get('cycles',2),
+                goal_timeout=90. if mode=='round_trip' else 45.)
+            if mode=='round_trip' and round_trip_distance+limits.robot_radius+limits.margin>limits.max_radius:
+                raise ValueError('출발점 반경은 목표 거리와 로봇 외곽·여유 공간보다 커야 합니다')
             if limits.max_radius>10 or limits.max_duration>3600 or limits.max_distance>500:
                 raise ValueError('시험 범위는 반경 10m·시간 3600초·총 경로 500m 이하여야 합니다')
             task=str(data.get('task','자동 탐색 및 순회')).strip()
@@ -106,13 +119,14 @@ class Autonomy:
             self.validate_speed(multiplier)
             self.speed_multiplier=multiplier
             if not 1<=len(task)<=240:raise ValueError('작업명을 1~240자로 입력하세요')
-            self.owner=owner;self.error=None;self.phase='starting';self.paused=False
+            self.owner=owner;self.error=None;self.fault_sensor_health=None;self.phase='starting';self.paused=False
             self.recording_expected=False;self.return_requested=False
             self.generation=getattr(self,'generation',0)+1
             self.results=queue.SimpleQueue();self.guard=None;self.handle=None;self.last_report=None;self.episode=None
-            self.stop_event.clear();self.outcome='unfinished';self.mission=Mission(limits);self.grid=None
+            self.stop_event.clear();self.outcome='unfinished';self.mission=Mission(limits,round_trip_distance);self.grid=None
             self.public_limits={'max_radius_m':limits.max_radius,'max_duration_s':limits.max_duration,
-                                'max_distance_m':limits.max_distance,'cycles':limits.cycles,'max_linear_m_s':.03*multiplier,'max_angular_rad_s':.15*multiplier}
+                                'max_distance_m':limits.max_distance,'cycles':limits.cycles,'max_linear_m_s':.03*multiplier,'max_angular_rad_s':.15*multiplier,
+                                'mode':mode,'target_distance_m':round_trip_distance}
             self.thread=threading.Thread(target=self.run,args=(measured,limits,task),daemon=True)
             self.thread.start()
 
@@ -180,14 +194,16 @@ class Autonomy:
                 if time.monotonic()>=deadline:break
                 rclpy.spin_once(self.backend.node,timeout_sec=0)
         if self.guard is None or self.phase=='starting':return
-        with self.health_lock:ready=self.health.report(time.monotonic())['ready']
+        with self.health_lock:health=self.health.report(time.monotonic())
+        ready=health['ready']
         if self.stop_event.is_set() or self.paused:self.guard.stop();return
         if self.recording_expected and (self.app.recorder.error or not self.app.recorder.active):
             self.error='기록 입력 또는 저장 중단';self.stop_event.set();self.guard.stop(self.error);return
         if time.monotonic()-self.last_planner>3 or (self.process and self.process.poll() is not None):
             self.error='계획 프로세스 응답 중단';self.stop_event.set();self.guard.stop(self.error);return
         self.guard.tick(ready)
-        if self.guard.fault:self.error=self.guard.fault;self.stop_event.set()
+        if self.guard.fault:
+            self.fault_sensor_health=health;self.error=self.guard.fault;self.stop_event.set()
 
     def install_ros(self,sensor):
         import rclpy
@@ -284,7 +300,7 @@ class Autonomy:
 
     def run(self,measured,limits,task):
         recorder=self.app.recorder;previous_profile=dict(recorder.profile);previous_slam_config=recorder.slam_config
-        maintenance=None;log=None
+        maintenance=None;log=None;lifecycle_clients={}
         try:
             from ament_index_python.packages import get_package_share_directory
             import yaml
@@ -318,24 +334,42 @@ class Autonomy:
                 nav['planner_server']['ros__parameters'].setdefault(plugin,{})['allow_unknown']=False
             for name in ('global_costmap','local_costmap'):
                 nav[name][name]['ros__parameters']['track_unknown_space']=True
+            if self.mission.round_trip_distance is not None:
+                nav['controller_server']['ros__parameters']['general_goal_checker']['xy_goal_tolerance']=.05
+                nav['controller_server']['ros__parameters']['FollowPath']['xy_goal_tolerance']=.05
             (self.run_dir/'nav2.yaml').write_text(yaml.safe_dump(nav))
             slam=yaml.safe_load((Path(get_package_share_directory('slam_toolbox'))/'config/mapper_params_online_async.yaml').read_text())
             slam['slam_toolbox']['ros__parameters'].update(use_sim_time=False,mode='mapping',scan_topic=navigation_sensor['scan_topic'],
                 base_frame=sensor['base_frame'],odom_frame=sensor['odom_frame'],map_frame='map',map_update_interval=1.,resolution=.05)
+            if self.mission.round_trip_distance is not None:
+                slam['slam_toolbox']['ros__parameters'].update(minimum_travel_distance=.05,minimum_travel_heading=.05)
             (self.run_dir/'slam.yaml').write_text(yaml.safe_dump(slam))
             log=(self.run_dir/'stack.log').open('w')
             self.process=subprocess.Popen(['ros2','launch',str(ROOT/'tools/live_patrol_stack.py'),
                 'params_file:='+str(self.run_dir/'nav2.yaml'),'slam_params_file:='+str(self.run_dir/'slam.yaml'),
                 'calibration_file:='+str(self.run_dir/'calibration.json')],stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
             deadline=time.monotonic()+40
+            from lifecycle_msgs.srv import GetState
+            lifecycle_clients={name:self.backend.node.create_client(GetState,'/'+name+'/get_state')
+                for name in ('planner_server','controller_server','smoother_server','behavior_server','bt_navigator')}
+            lifecycle_pending={};lifecycle_active=set()
             while not self.stop_event.wait(.1):
+                for name,client in lifecycle_clients.items():
+                    pending=lifecycle_pending.get(name)
+                    if pending is not None and pending.done():
+                        response=pending.result()
+                        if response is not None and response.current_state.id==3:lifecycle_active.add(name)
+                        else:lifecycle_active.discard(name)
+                        del lifecycle_pending[name]
+                    if name not in lifecycle_active and name not in lifecycle_pending and client.service_is_ready():
+                        lifecycle_pending[name]=client.call_async(GetState.Request())
                 with self.health_lock:ready=self.health.report(time.monotonic())['ready']
-                if self.grid and ready and self.read_pose(sensor['base_frame']) and self.client.server_is_ready():break
+                if self.grid and ready and self.read_pose(sensor['base_frame']) and self.client.server_is_ready() and len(lifecycle_active)==len(lifecycle_clients):break
                 if self.process.poll() is not None or time.monotonic()>deadline:
                     with self.health_lock:missing=self.health.report(time.monotonic())['missing']
                     raise ValueError('SLAM·센서·TF·Nav2 준비 실패: '+json.dumps({'map':self.grid is not None,
                         'sensor_missing':missing,'pose_error':getattr(self,'pose_error',None),
-                        'nav2_action_ready':self.client.server_is_ready()},ensure_ascii=False))
+                        'nav2_action_ready':self.client.server_is_ready(),'nav2_inactive_nodes':sorted(set(lifecycle_clients)-lifecycle_active)},ensure_ascii=False))
             if self.stop_event.is_set():return
             self.guard=NavigationGuard(self.backend)
             self.guard.set_limits(.03*self.speed_multiplier,.15*self.speed_multiplier)
@@ -375,6 +409,7 @@ class Autonomy:
             recorder.profile=previous_profile
             recorder.slam_config=previous_slam_config
             for sub in self.subscriptions:self.backend.node.destroy_subscription(sub)
+            for client in lifecycle_clients.values():self.backend.node.destroy_client(client)
             self.subscriptions=[]
             if self.filtered_publisher:self.backend.node.destroy_publisher(self.filtered_publisher)
             self.filtered_publisher=None;self.navigation_scan_topic=None
