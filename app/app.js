@@ -276,7 +276,7 @@ function renderCameras(){
  cameraListSignature=signature;
  const selected=$('cameraSelect').value;
  $('cameraSelect').replaceChildren();
- cameras.forEach(c=>{const option=document.createElement('option');option.value=c.index;option.textContent=(c.role==='front'?'본체':'집게')+(c.connected?'':' · 연결 안 됨');option.disabled=!c.connected;$('cameraSelect').append(option);});
+ cameras.forEach(c=>{const option=document.createElement('option');option.value=c.index;option.textContent=({front:'상단',wrist:'집게',left_wrist:'왼팔 손목',right_wrist:'오른팔 손목'}[c.role]||c.role)+(c.connected?'':' · 연결 안 됨');option.disabled=!c.connected;$('cameraSelect').append(option);});
  if(cameras.some(c=>String(c.index)===selected&&c.connected))$('cameraSelect').value=selected;
  $('cameraSelect').hidden=cameras.length<2;
  $('deviceConfig').textContent=status?.has_arm?'팔 장착 · 카메라':'본체 카메라';
