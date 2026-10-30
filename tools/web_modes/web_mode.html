@@ -1,0 +1,15 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>XLeRobot 웹앱 전환</title>
+<style>body{font:16px system-ui;background:#101820;color:#f1f5f9;margin:auto;max-width:660px;padding:28px}section{border:1px solid #415363;border-radius:16px;padding:22px;margin:18px 0}button,input,a{font:inherit;padding:12px;border-radius:8px}button{cursor:pointer;border:0;background:#9ce6ca;color:#082b22;margin:6px 6px 6px 0}button:disabled{opacity:.4;cursor:wait}input{max-width:160px}a{color:#a6ddff;display:inline-block}p{line-height:1.65}.muted{color:#afbecb}#message{white-space:pre-wrap}h1{font-size:26px}</style>
+<h1>웹 조작기 전환</h1><p class="muted">한 번에 하나의 웹 조작기만 사용합니다. 전환해도 지도·기록·보정 파일은 유지됩니다.</p>
+<section id="login"><label>웹앱 접속 코드 <input id="pin" type="password" inputmode="numeric" autocomplete="off"></label><button id="connect">연결</button></section>
+<section id="panel" hidden><p id="current" role="status"></p><button id="custom">내 웹앱으로 전환</button><button id="factory">기존 웹 조작기로 전환</button><p><a id="open" hidden>현재 웹앱 열기 ↗</a></p><p class="muted">주행·기록·팔 작업을 먼저 종료하세요. 기존 조작기에서는 지도 저장 후 로봇·지도 작성·자율주행 기능도 꺼 주세요. 켜져 있는 작업이 있으면 전환하지 않습니다.</p><p class="muted">전환은 모터를 켜지 않습니다. 마지막으로 선택한 웹앱을 재부팅 후에도 사용합니다.</p></section>
+<p id="message" role="status"></p>
+<script>
+const $=id=>document.getElementById(id);let pending=false;
+async function api(path,data){const r=await fetch('/api/'+path,{method:data?'POST':'GET',headers:data?{'Content-Type':'application/json'}:undefined,body:data?JSON.stringify(data):undefined});const v=await r.json();if(!r.ok)throw Error(v.error||'연결 오류');return v;}
+async function refresh(){try{const s=await api('status');$('login').hidden=true;$('panel').hidden=false;pending=!!s.operation.busy;const names={custom:'내 웹앱',factory:'기존 웹 조작기',off:'모두 꺼짐',conflict:'충돌 상태'};$('current').textContent=pending?'전환 중입니다…':'현재: '+(names[s.mode]||s.mode);$('custom').disabled=pending||s.mode==='custom';$('factory').disabled=pending||s.mode==='factory';$('message').textContent=s.operation.error||'';const link=$('open');link.hidden=pending||!['custom','factory'].includes(s.mode);if(!link.hidden){const u=new URL(location.href);u.port=s.mode==='custom'?'8090':'8080';u.pathname='/';u.search='';u.hash='';link.href=u.href;link.textContent=(names[s.mode]||'웹앱')+' 열기 ↗';}}catch(e){$('message').textContent=e.message;}}
+$('connect').onclick=async()=>{try{await api('login',{pin:$('pin').value});$('pin').value='';await refresh();}catch(e){$('message').textContent=e.message;}};
+$('pin').onkeydown=e=>{if(e.key==='Enter')$('connect').click();};
+for(const mode of ['custom','factory'])$(mode).onclick=async()=>{if(pending)return;pending=true;$('custom').disabled=$('factory').disabled=true;try{await api('switch',{mode});await refresh();}catch(e){$('message').textContent=e.message;pending=false;}};
+setInterval(()=>{if(!$('panel').hidden)refresh();},2500);refresh();
+</script></html>

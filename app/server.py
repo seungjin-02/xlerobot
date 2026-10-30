@@ -39,6 +39,7 @@ class App:
         config = config or {}
         profile={**getattr(backend,'output_parameters',{'demo':True}), 'robot_name':config.get('name','LeKiwi'), 'camera_source':config.get('camera','0'), 'camera_rotation':config.get('camera_rotation',0)}
         self.device_name=config.get('name','LeKiwi')
+        self.controller_switch_enabled=config.get('controller_switch_enabled') is True
         self.has_arm=bool(config.get('has_arm',False))
         self.cameras=config.get('cameras') or [{'role':'front','source':config.get('camera','0'),'rotation':config.get('camera_rotation',0)}]
         profile.update(has_arm=self.has_arm,cameras=self.cameras)
@@ -176,6 +177,7 @@ class Handler(BaseHTTPRequestHandler):
             data['fault'] = self.app.fault
             data['device_name'] = self.app.device_name
             data['has_arm'] = self.app.has_arm
+            data['controller_switch_enabled'] = self.app.controller_switch_enabled
             try:
                 with urllib.request.urlopen('http://127.0.0.1:8080/api/cameras',timeout=.3) as response:
                     camera_health={c['role']:c['connected'] for c in json.load(response)}

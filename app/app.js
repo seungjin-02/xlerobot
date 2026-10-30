@@ -88,6 +88,7 @@ async function api(path, body, timeout = 1500, keepalive = false) {
   } finally { clearTimeout(timer); }
 }
 function render() {
+  const switchLink=$('controllerSwitch');if(switchLink){switchLink.hidden=!status?.controller_switch_enabled;const u=new URL(location.href);u.port='8091';u.pathname='/';u.search='';u.hash='';switchLink.href=u.href;}
   const mine = !!lease, maintenance = !!status?.updates?.blocked;
   if(status?.device_name)document.querySelector('.brand strong').textContent=status.device_name;
   controls.forEach(b => {
