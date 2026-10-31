@@ -1,4 +1,5 @@
 import copy
+import io
 import http.cookiejar
 import json
 from pathlib import Path
@@ -37,6 +38,10 @@ class ModePolicyTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 require_idle('custom', value)
 
+    def test_completed_map_save_is_idle_for_switching(self):
+        value=copy.deepcopy(FACTORY);value['processes']['save_map']={'state':'succeeded'}
+        require_idle('factory',value)
+
     def test_factory_activities(self):
         for key in ('processes', 'motor', 'teleop_arm', 'control', 'calibration', 'zmq_host'):
             value = copy.deepcopy(FACTORY)
@@ -68,6 +73,7 @@ class SwitchTransactionTests(unittest.TestCase):
             self.mode = mode
         self.start = start
         self.patches = [patch.object(root, 'STATE', self.directory),
+            patch.object(root, 'require_target_devices', lambda _: None),
             patch.object(root, 'status', lambda: {'mode': self.mode}),
             patch.object(root, 'api_status', lambda _: copy.deepcopy(CUSTOM)),
             patch.object(root, 'serial_holders', lambda **_: []),
@@ -97,6 +103,12 @@ class SwitchTransactionTests(unittest.TestCase):
                 root.switch('factory')
         self.assertEqual(self.calls, [])
 
+    def test_missing_target_devices_never_stops_or_starts_services(self):
+        with patch.object(root, 'require_target_devices', side_effect=ValueError('USB disconnected')):
+            with self.assertRaisesRegex(ValueError, 'USB disconnected'):
+                root.switch('custom')
+        self.assertEqual(self.calls, [])
+
     def test_failed_target_rolls_back_without_persisting(self):
         def fail_factory(mode):
             self.start(mode)
@@ -110,11 +122,19 @@ class SwitchTransactionTests(unittest.TestCase):
         self.assertEqual(json.loads((self.directory/'state.json').read_text())['mode'], 'custom')
 
 
+class TargetDeviceTests(unittest.TestCase):
+    def test_disconnected_devices_block_custom_but_allow_factory_diagnosis(self):
+        with patch.object(root.Path, 'exists', return_value=False):
+            with self.assertRaisesRegex(ValueError, '/dev/lekiwi_motor'):
+                root.require_target_devices('custom')
+            root.require_target_devices('factory')
+
+
 class ModeHttpTests(unittest.TestCase):
     def setUp(self):
         self.server = web.ThreadingHTTPServer(('127.0.0.1', 0), web.Handler)
         self.server.daemon_threads = True
-        self.server.state = web.State('98123456')
+        self.server.state = web.State()
         self.calls = []
         def helper(*args):
             self.calls.append(args)
@@ -141,24 +161,23 @@ class ModeHttpTests(unittest.TestCase):
         except urllib.error.HTTPError as response:
             return response.code, json.load(response)
 
-    def login(self):
-        self.assertEqual(self.request('/api/login', {'pin': '98123456'})[0], 200)
+    def test_status_without_login(self):
+        self.assertEqual(self.request('/api/status')[0], 200)
+        self.assertEqual(self.calls, [('status',)])
 
-    def test_status_requires_auth(self):
-        self.assertEqual(self.request('/api/status')[0], 401)
+    def test_cross_origin_switch_rejected(self):
+        self.assertEqual(self.request('/api/switch', {'mode': 'factory'}, 'http://evil.invalid')[0], 403)
         self.assertEqual(self.calls, [])
 
-    def test_cross_origin_and_wrong_pin(self):
-        self.assertEqual(self.request('/api/login', {'pin': '98123456'}, 'http://evil.invalid')[0], 403)
-        self.assertEqual(self.request('/api/login', {'pin': 'wrong'})[0], 401)
+    def test_login_endpoint_removed(self):
+        self.assertEqual(self.request('/api/login', {'pin': 'irrelevant'})[0], 404)
+        self.assertEqual(self.calls, [])
 
     def test_invalid_mode_cannot_invoke_helper(self):
-        self.login()
         self.assertEqual(self.request('/api/switch', {'mode': 'custom; command'})[0], 409)
         self.assertEqual(self.calls, [])
 
-    def test_authorized_switch_and_status(self):
-        self.login()
+    def test_switch_without_login_and_status(self):
         self.assertEqual(self.request('/api/switch', {'mode': 'factory'})[0], 202)
         deadline = time.monotonic()+2
         while self.server.state.operation['busy'] and time.monotonic()<deadline:
@@ -167,13 +186,42 @@ class ModeHttpTests(unittest.TestCase):
         self.assertEqual(self.request('/api/status')[1]['mode'], 'custom')
 
     def test_concurrent_switch_rejected(self):
-        self.login()
         self.server.state.switch_lock.acquire()
         try:
             self.assertEqual(self.request('/api/switch', {'mode': 'factory'})[0], 409)
             self.assertEqual(self.calls, [])
         finally:
             self.server.state.switch_lock.release()
+
+
+class SharedNativeModeTests(unittest.TestCase):
+    def test_shared_backend_plus_mobile_is_one_controller(self):
+        with patch.object(root, 'shared_engine', return_value=True), patch.object(root, 'active', side_effect=lambda unit,user=False: unit in (root.FACTORY,'lekiwi-phone.service')):
+            self.assertEqual(root.status()['mode'],'custom')
+
+    def test_legacy_sensor_service_still_counts_as_conflict(self):
+        with patch.object(root, 'shared_engine', return_value=True), patch.object(root, 'active', return_value=True):
+            self.assertEqual(root.status()['mode'],'conflict')
+
+    def test_mobile_without_engine_is_not_reported_healthy(self):
+        with patch.object(root, 'shared_engine', return_value=True), patch.object(root, 'active', side_effect=lambda unit,user=False: unit=='lekiwi-phone.service'):
+            self.assertEqual(root.status()['mode'],'conflict')
+
+    def test_shared_mobile_uses_native_idle_checks(self):
+        with patch.object(root, 'shared_engine', return_value=True):
+            root.idle('custom',FACTORY)
+            busy=copy.deepcopy(FACTORY);busy['motor']['ready']=True
+            with self.assertRaises(ValueError):root.idle('custom',busy)
+
+    def test_shared_start_never_starts_legacy_drivers(self):
+        state={'mode':'custom','custom_units':{'lekiwi-phone.service':True}}
+        with patch.object(root,'shared_engine',return_value=True), patch.object(root,'command') as command, patch.object(root,'api_status',return_value=FACTORY),patch.object(root,'status',return_value=state), patch.object(root.urllib.request,'build_opener') as opener:
+            opener.return_value.open.side_effect=lambda *a,**k:io.BytesIO(b'{"backend":"native"}')
+            root.start_mode('custom')
+            self.assertEqual(command.call_count,2)
+            flattened=str(command.call_args_list)
+            self.assertNotIn('lekiwi-camera.service',flattened)
+            self.assertNotIn('lekiwi-lidar.service',flattened)
 
 
 if __name__ == '__main__':

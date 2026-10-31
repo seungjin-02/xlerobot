@@ -12,6 +12,7 @@ jobs:
       - run: python -m unittest discover -s app -p test_control.py -v
       - run: python -m unittest discover -s tests -v
       - run: node --check app/app.js
+      - run: node --test tests/mobile_cameras.test.mjs tests/mobile_mission.test.mjs tests/mobile_exploration.test.mjs
       - run: bash -n install.sh prepare-system.sh start.sh
       - run: node --check updater/admin.js
   browser:
@@ -32,6 +33,10 @@ jobs:
           NODE_PATH: ${{ runner.temp }}/browser/node_modules
           TEST_PYTHON: python
       - run: node tests/admin_browser.cjs
+        env:
+          NODE_PATH: ${{ runner.temp }}/browser/node_modules
+          TEST_PYTHON: python
+      - run: node tests/mobile_preview.cjs
         env:
           NODE_PATH: ${{ runner.temp }}/browser/node_modules
           TEST_PYTHON: python

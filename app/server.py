@@ -146,7 +146,7 @@ class Handler(BaseHTTPRequestHandler):
     def valid_host(self):
         try:
             host = urlsplit('http://' + self.headers.get('Host', '')).hostname
-            if host in ('localhost', 'lekiwi01', 'lekiwi01.local'): return True
+            if host in ('localhost', 'lekiwi01', 'lekiwi01.local', 'xlerobot', 'xlerobot.local'): return True
             address = ipaddress.ip_address(host)
             return address.is_private or address.is_loopback
         except ValueError: return False

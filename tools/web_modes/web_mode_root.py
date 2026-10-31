@@ -30,20 +30,33 @@ def active(unit, user=False):
     return result.stdout.strip() not in ('inactive', 'failed')
 
 
+def shared_engine():
+    return (STATE/'shared-native').is_file()
+
+
+def idle(mode, data):
+    return require_idle('factory' if shared_engine() else mode, data)
+
+
 def status():
     custom = {u: active(u, True) for u in CUSTOM}
     factory = active(FACTORY)
-    mode = 'conflict' if factory and any(custom.values()) else 'factory' if factory else 'custom' if any(custom.values()) else 'off'
+    if shared_engine():
+        legacy = any(custom[u] for u in CUSTOM if u != 'lekiwi-phone.service')
+        phone = custom['lekiwi-phone.service']
+        mode = 'conflict' if legacy or (phone and not factory) else 'custom' if phone else 'factory' if factory else 'off'
+    else:
+        mode = 'conflict' if factory and any(custom.values()) else 'factory' if factory else 'custom' if any(custom.values()) else 'off'
     saved = json.loads((STATE/'state.json').read_text()) if (STATE/'state.json').exists() else {}
     return {'mode': mode, 'custom_units': custom, 'factory_active': factory, 'saved_mode': saved.get('mode')}
 
 
 def api_status(mode):
-    port = 8090 if mode == 'custom' else 8080
+    port = 8090 if mode == 'custom' and not shared_engine() else 8080
     base = 'http://127.0.0.1:' + str(port)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
         urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-    if mode == 'custom':
+    if mode == 'custom' and not shared_engine():
         pin = json.loads((HOME/'.config/lekiwi-phone/config.json').read_text())['pin']
         req = urllib.request.Request(base+'/api/pair', data=json.dumps({'pin': pin}).encode(),
             headers={'Content-Type': 'application/json', 'Origin': base})
@@ -84,17 +97,37 @@ def stop_all():
         raise RuntimeError('다른 프로그램이 직렬 장치를 사용 중입니다: ' + str(holders))
 
 
+def require_target_devices(mode):
+    # The factory gateway may stay available for diagnosis without bringup.
+    # Custom mode starts the sensor services, so never start it with a known
+    # disconnected motor/LiDAR bus or repeatedly restart that failed hardware.
+    if mode == 'custom' and not shared_engine():
+        missing = [p for p in ('/dev/lekiwi_motor', '/dev/ydlidar') if not Path(p).exists()]
+        if missing:
+            raise ValueError('바퀴·LiDAR USB 연결이 끊겨 전환을 중단했습니다. '
+                             '전원을 끄고 USB 허브·전원·케이블을 점검하세요: ' + ', '.join(missing))
+
+
 def start_mode(mode):
-    if mode == 'custom':
+    require_target_devices(mode)
+    if mode == 'custom' and shared_engine():
+        command(['systemctl', 'start', FACTORY])
+        command(USERCTL + ['start', 'lekiwi-phone.service'])
+    elif mode == 'custom':
         command(USERCTL + ['start', 'lekiwi-camera.service', 'lekiwi-lidar.service', 'lekiwi-phone.service'])
     else:
         command(['systemctl', 'start', FACTORY])
     deadline = time.monotonic()+25
     while time.monotonic() < deadline:
         try:
-            require_idle(mode, api_status(mode))
+            idle(mode, api_status(mode))
+            if mode == 'custom' and shared_engine():
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                with opener.open('http://127.0.0.1:8090/health',timeout=3) as response:
+                    health=json.load(response)
+                if health.get('backend') != 'native':raise ValueError('Mobile backend not ready')
             current = status()
-            if current['mode'] == mode and (mode != 'custom' or all(current['custom_units'].values())):
+            if current['mode'] == mode and (mode != 'custom' or (shared_engine() and current['custom_units']['lekiwi-phone.service']) or all(current['custom_units'].values())):
                 return
         except Exception:
             pass
@@ -105,12 +138,13 @@ def start_mode(mode):
 def switch(mode, boot=False):
     if mode not in MODES:
         raise ValueError('Unknown controller')
+    require_target_devices(mode)
     before = status()
     if before['mode'] == 'conflict':
         raise ValueError('두 서비스가 함께 실행 중입니다. 자동 전환을 거부합니다')
     previous = before['mode']
     if previous in MODES:
-        require_idle(previous, api_status(previous))
+        idle(previous, api_status(previous))
     holders = serial_holders(allowed_custom=previous == 'custom')
     if holders:
         raise ValueError('기존 로봇 기능 또는 별도 프로그램을 먼저 종료하세요: '+str(holders))
@@ -138,7 +172,10 @@ def main():
         return status()
     if len(args) == 2 and args[0] == 'assert' and args[1] in MODES:
         current = status()
-        opposite = current['factory_active'] if args[1] == 'custom' else any(current['custom_units'].values())
+        if shared_engine():
+            opposite = any(current['custom_units'][u] for u in CUSTOM if u != 'lekiwi-phone.service')
+        else:
+            opposite = current['factory_active'] if args[1] == 'custom' else any(current['custom_units'].values())
         if opposite:
             raise ValueError('다른 웹 조작기가 실행 중입니다. 전환 화면을 사용하세요')
         return {'ok': True}

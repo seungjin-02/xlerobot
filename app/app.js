@@ -90,7 +90,7 @@ async function api(path, body, timeout = 1500, keepalive = false) {
 function render() {
   const switchLink=$('controllerSwitch');if(switchLink){switchLink.hidden=!status?.controller_switch_enabled;const u=new URL(location.href);u.port='8091';u.pathname='/';u.search='';u.hash='';switchLink.href=u.href;}
   const mine = !!lease, maintenance = !!status?.updates?.blocked;
-  if(status?.device_name)document.querySelector('.brand strong').textContent=status.device_name;
+  if(status?.device_name)document.querySelector('.brand strong').textContent=status.device_name==='XLeRobot Trolley'?'XLeRobot':status.device_name;
   controls.forEach(b => {
     b.disabled = maintenance || !mine || arming || stopping || navigating;
     const selected = mine && b.dataset.dir === direction;
@@ -100,10 +100,6 @@ function render() {
   $('arm').disabled = maintenance || mine || !!status?.armed || stopping || preparing || arming || disconnected || document.hidden;
   if(status?.autonomy?.busy)$('arm').disabled=true;
   $('arm').textContent = arming ? '준비 중…' : mine ? '조종 중' : '조종 시작';
-  $('prepareBox').hidden = !status || status.demo || status.max_linear >= .89;
-  $('prepare').disabled = maintenance || preparing || !!status?.armed || !!status?.motor_ready || !!status?.other_publishers;
-  if(status?.autonomy?.busy)$('prepare').disabled=true;
-  $('prepare').textContent = preparing ? '고속 설정 준비 중…' : '폰 조종 고속 설정 적용';
   $('badge').textContent = disconnected ? '재연결 중' : status?.demo ? '시뮬레이션' : mine ? '조종 중' : status ? '연결됨' : '접속 대기';
   $('badge').classList.toggle('on', mine && !disconnected);
   $('controlSummary').textContent = `${status?.demo ? '합성 데모 · 실물 연결 없음' : '로컬 로봇'} · ${status && !disconnected ? 'PIN 인증됨' : '연결 확인 필요'} · ${disconnected ? '재연결 중' : mine ? '내 제어권' : status?.armed ? '다른 기기 조종 중' : '조종 중지'} · ${status?.recording?.active ? '기록 중' : '기록 대기'}`;
@@ -121,7 +117,7 @@ function render() {
   $('speedValue').textContent = Math.round(speed * 30) + '배';
   const max = status?.max_linear ?? .9;
   $('speedDetail').textContent = `이동 요청 ${(.03 * Math.round(speed * 30)).toFixed(2)} m/s · 회전 요청 ${(.15 * Math.round(speed * 30)).toFixed(3)} rad/s (${(.15 * Math.round(speed * 30) * 180 / Math.PI).toFixed(1)}°/s)`;
-  $('limitNote').textContent = max < .89 ? `현재 제어 제한 ${max.toFixed(3)} m/s. 아래 설정 적용 버튼으로 속도 설정을 적용하세요.` : '하한 0.03 · 기본 0.30 · 상한 0.90 m/s. 바퀴 출력 제한이 별도로 적용되며 실제 속도는 미측정입니다.';
+  $('limitNote').textContent = max < .89 ? `현재 제어 제한 ${max.toFixed(3)} m/s. 실제 드라이버 상한이 적용됩니다.` : '하한 0.03 · 기본 0.30 · 상한 0.90 m/s. 바퀴 출력 제한이 별도로 적용되며 실제 속도는 미측정입니다.';
   document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('selected', Number(b.dataset.speed) === Math.round(speed * 30)));
   renderCameras();
   const rec=status?.recording;
@@ -238,12 +234,6 @@ controls.forEach(button => {
 });
 $('speed').addEventListener('input',e=>{speed=Number(e.target.value)/30;render();sendCommand(true);});
 document.querySelectorAll('[data-speed]').forEach(b=>b.addEventListener('click',()=>{speed=Number(b.dataset.speed)/30;$('speed').value=b.dataset.speed;render();sendCommand(true);}));
-$('prepare').addEventListener('click',async()=>{
-  preparing=true;render();message();
-  try {await api('prepare',{},18000);message('설정이 적용됐습니다. 조종 시작을 누르세요.');}
-  catch(e){message(e.message);}
-  finally{preparing=false;await refresh();render();}
-});
 $('stop').addEventListener('click',()=>stop());
 $('recordStart').addEventListener('click',async()=>{
   recordBusy=true;message();render();

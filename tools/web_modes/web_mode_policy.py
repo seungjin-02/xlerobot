@@ -23,7 +23,8 @@ def require_idle(mode, status):
     if not isinstance(processes, dict) or not {'bringup', 'mapping', 'navigation'} <= processes.keys():
         raise ValueError('기존 조작기의 기능 상태를 확인할 수 없습니다')
     for name, process in processes.items():
-        if not isinstance(process, dict) or process.get('state') not in ('stopped', 'idle', 'failed', 'exited'):
+        allowed = ('stopped', 'idle', 'failed', 'exited', 'succeeded') if name == 'save_map' else ('stopped', 'idle', 'failed', 'exited')
+        if not isinstance(process, dict) or process.get('state') not in allowed:
             raise ValueError('기존 조작기에서 로봇·지도·주행·저장 기능을 먼저 종료하세요: ' + name)
     motor = status.get('motor')
     arm = status.get('teleop_arm')

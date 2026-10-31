@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-"""Always-on, PIN protected controller selector; runs as the robot user."""
-from collections import defaultdict, deque
-import hmac
-from http.cookies import SimpleCookie
+"""Always-on local controller selector; application login remains independent."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 import json
 from pathlib import Path
-import secrets
 import subprocess
 import threading
-import time
 from urllib.parse import urlsplit
 
 HELPER = '/usr/local/libexec/xlerobot-web-mode'
@@ -18,11 +13,8 @@ ROOT = Path(__file__).resolve().parent
 
 
 class State:
-    def __init__(self, pin):
-        self.pin = str(pin)
+    def __init__(self):
         self.lock = threading.Lock()
-        self.sessions = {}
-        self.attempts = defaultdict(deque)
         self.operation = {'busy': False, 'error': None, 'target': None}
         self.switch_lock = threading.Lock()
 
@@ -74,26 +66,15 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, TypeError):
             return False
 
-    def reply(self, code, value, cookie=None):
+    def reply(self, code, value):
         data = json.dumps(value, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(data)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
-        if cookie:
-            self.send_header('Set-Cookie', cookie)
         self.end_headers()
         self.wfile.write(data)
-
-    def authenticated(self):
-        try:
-            cookies = SimpleCookie(self.headers.get('Cookie', ''))
-            token = cookies['web_mode_session'].value
-            with self.server.state.lock:
-                return self.server.state.sessions.get(token, 0) > time.monotonic()
-        except (KeyError, ValueError):
-            return False
 
     def do_GET(self):
         if not self.valid_host():
@@ -109,8 +90,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.wfile.write(body)
         if self.path != '/api/status':
             return self.reply(404, {'error': 'Not found'})
-        if not self.authenticated():
-            return self.reply(401, {'error': '웹앱 접속 코드를 입력하세요'})
         try:
             value = self.server.state.helper('status')
             with self.server.state.lock:
@@ -132,27 +111,8 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(data, dict):
                 raise ValueError('Invalid JSON')
             state = self.server.state
-            if self.path == '/api/login':
-                now = time.monotonic()
-                with state.lock:
-                    attempts = state.attempts[self.client_address[0]]
-                    while attempts and now-attempts[0] > 60:
-                        attempts.popleft()
-                    if len(attempts) >= 10:
-                        return self.reply(429, {'error': '1분 뒤 다시 시도하세요'})
-                    attempts.append(now)
-                    if not hmac.compare_digest(str(data.get('pin', '')), state.pin):
-                        return self.reply(401, {'error': '접속 코드가 맞지 않습니다'})
-                    state.sessions = {k: v for k, v in state.sessions.items() if v > now}
-                    if len(state.sessions) >= 100:
-                        return self.reply(429, {'error': '접속 수 제한'})
-                    token = secrets.token_urlsafe(32)
-                    state.sessions[token] = now+1800
-                return self.reply(200, {'ok': True}, 'web_mode_session='+token+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=1800')
             if self.path != '/api/switch':
                 return self.reply(404, {'error': 'Not found'})
-            if not self.authenticated():
-                return self.reply(401, {'error': '접속 코드를 입력하세요'})
             state.switch(data.get('mode'))
             return self.reply(202, {'accepted': True})
         except (ValueError, TypeError) as error:
@@ -160,10 +120,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    config = json.loads((Path.home()/'.config/lekiwi-phone/config.json').read_text())
     server = ThreadingHTTPServer(('0.0.0.0', 8091), Handler)
     server.daemon_threads = True
-    server.state = State(config['pin'])
+    server.state = State()
     server.serve_forever()
 
 
