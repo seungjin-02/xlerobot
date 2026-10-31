@@ -1,4 +1,73 @@
 'use strict';
+let autonomyBusy=false, autonomyMapBusy=false, autonomyMapAt=0;
+let autonomySpeed=1,autonomySpeedBusy=false;
+function renderAutonomy(){
+  const a=status?.autonomy;
+  if(!$('autonomyStart'))return;
+  const busy=!!a?.busy, mine=!!a?.mine;
+  if(busy && !autonomySpeedBusy)autonomySpeed=a.speed_multiplier||1;
+  if(busy && a.limits){
+    $('autonomyMode').value=a.limits.mode||'patrol';
+    if(a.limits.target_distance_m!=null)$('roundTripDistance').value=a.limits.target_distance_m;
+    $('autonomyRadius').value=a.limits.max_radius_m;
+    $('autonomyMinutes').value=a.limits.max_duration_s/60;
+    $('autonomyCycles').value=a.limits.cycles;
+  }
+  $('autonomySpeed').value=autonomySpeed;
+  $('autonomySpeedValue').textContent=autonomySpeed+'배';
+  $('autonomySpeedDetail').textContent=`이동 요청 상한 ${(autonomySpeed*.03).toFixed(2)} m/s · 회전 요청 상한 ${($('autonomyMode').value==='straight_round_trip'?0:autonomySpeed*.15).toFixed(2)} rad/s`;
+  const speedDisabled=autonomySpeedBusy || (busy && (!mine || a.phase!=='running'));
+  $('autonomySpeed').disabled=speedDisabled;
+  document.querySelectorAll('[data-autonomy-speed]').forEach(b=>{b.disabled=speedDisabled;b.classList.toggle('selected',Number(b.dataset.autonomySpeed)===autonomySpeed);});
+  $('autonomyStart').disabled=!a?.configured || busy || !!status?.armed || !!status?.recording?.active || autonomyBusy || disconnected || !!status?.updates?.blocked;
+  $('autonomyPause').disabled=!mine || !!a?.paused || autonomyBusy;
+  $('autonomyResume').disabled=!mine || !a?.paused || autonomyBusy;
+  $('autonomyStop').disabled=!busy || autonomyBusy;
+  $('autonomyReturn').disabled=!mine || a?.phase!=='running' || autonomyBusy;
+  for(const id of ['autonomyTask','autonomyRadius','autonomyMinutes','autonomyCycles','autonomyMode','roundTripDistance','initialScanRotation'])$(id).disabled=busy;
+  const straight=$('autonomyMode').value==='straight_round_trip';
+  const roundTrip=$('autonomyMode').value!=='patrol';
+  if(straight)$('initialScanRotation').checked=false;
+  $('initialScanRotation').disabled=busy||straight;
+  $('roundTripSettings').hidden=!roundTrip;
+  $('autonomyCycles').disabled=busy||roundTrip;
+  const names={idle:'대기',starting:'센서·SLAM 준비 중',surveying:'제자리 회전·초기 지도 확보 중',running:'자동 운행',stopping:'정지·기록 저장 중',fault:'오류'};
+  $('autonomyState').textContent=a?.error || a?.blocked_reason || (a?.paused?'일시정지':names[a?.phase]||'상태 확인 중');
+  const m=a?.mission;
+  const states={outbound:'전방 목표로 이동',waiting:'준비',exploring:'미탐색 영역 탐색',patrolling:'순회',returning:'출발점 복귀',paused:'일시정지',complete:'완료',blocked:'경로 확보 불가',fault:'오류로 정지',stopped:'종료'};
+  const reasons={straight_heading_limit:'방향 이탈로 정지',return_corridor_not_clear:'직선 복귀 경로 막힘·정지',reachable_targets_exhausted:'갈 수 있는 목표 소진',reachable_area_exhausted:'도달 가능한 영역 탐색 종료',cycles_complete:'설정 순회 완료',duration_limit:'운행 시간 도달',navigation_failures_limit:'이동 실패 누적으로 복귀',home_unreachable:'복귀 경로 없음·정지',return_timeout:'복귀 시간 초과·정지',no_clear_known_start_cell:'출발 지점의 관측·외곽 여유 부족',safe_waypoint_reached:'안전 구간 도착·다음 경로 확인',outbound_goal_reached:'전방 목표 도착·복귀 준비',outbound_goal_failed:'전방 목표 이동 실패',outbound_corridor_not_clear:'전방 목표까지 안전한 경로 확보 불가',round_trip_path_blocked:'경로가 막혀 왕복 종료',round_trip_goal_timeout:'목표 이동 시간 초과',round_trip_lateral_limit:'통로 이탈로 정지',round_trip_overshoot:'목표 거리 초과로 정지',returned_home:'출발점 복귀 완료',operator_stop:'사용자 종료',return_failed:'복귀 경로 이동 실패',return_distance_reserve:'복귀 거리 확보',cancel_ack_timeout:'목표 취소 응답 시간 초과'};
+  $('autonomyProgress').textContent=m?`상태 ${states[m.state]||m.state} · 이동 ${Number(m.distance_m).toFixed(2)}m · 목표 ${m.goals_sent}개 · 완료 순회 ${m.cycles_finished}회${m.reason?' · '+(reasons[m.reason]||m.reason):''}`:'지도·좌표·센서가 준비되면 시작할 수 있습니다.';
+  if(['round_trip','straight_round_trip'].includes(m?.task_mode))$('autonomyProgress').textContent=`${states[m.state]||m.state} · 전방 목표 ${m.target_distance_m}m · 누적 이동 ${Number(m.distance_m).toFixed(2)}m · ${m.round_trip_completed?'왕복 완료':m.outbound_reached?'전방 목표 도착 확인':'전방 목표 도착 전'}${m.reason?' · '+(reasons[m.reason]||m.reason):''}`;
+  if(m?.return_reason)$('autonomyProgress').textContent+=' · 복귀 이유: '+(reasons[m.return_reason]||m.return_reason);
+  if(busy){$('badge').textContent=a.paused?'자동 순회 일시정지':'자동 탐색·순회';$('controlSummary').textContent+=' · 자동 운행';}
+  if(currentScreen==='autonomy' && !autonomyMapBusy && Date.now()-autonomyMapAt>1500)refreshAutonomyMap();
+}
+async function refreshAutonomyMap(){
+  autonomyMapBusy=true;autonomyMapAt=Date.now();
+  try{
+    const m=await api('autonomy/map',undefined,2500),canvas=$('autonomyMap');
+    canvas.hidden=!m.available;
+    if(!m.available){$('autonomyMapState').textContent='아직 생성된 실시간 지도가 없습니다.';return;}
+    const w=m.width,h=m.height;if(!Number.isInteger(w)||!Number.isInteger(h)||w<1||h<1||m.data.length!==w*h)return;
+    const image=document.createElement('canvas');image.width=w;image.height=h;const pix=image.getContext('2d').createImageData(w,h);
+    for(let i=0;i<m.data.length;i++){const v=m.data[i],j=((h-1-Math.floor(i/w))*w+i%w)*4,c=v<0?105:v>20?24:224;pix.data[j]=c;pix.data[j+1]=c;pix.data[j+2]=c;pix.data[j+3]=255;}
+    image.getContext('2d').putImageData(pix,0,0);canvas.width=640;canvas.height=Math.max(180,Math.round(640*h/w));
+    const ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.drawImage(image,0,0,canvas.width,canvas.height);
+    const point=p=>{const dx=p[0]-m.origin[0],dy=p[1]-m.origin[1],c=Math.cos(m.origin[2]),s=Math.sin(m.origin[2]);return [(c*dx+s*dy)/m.resolution/w*canvas.width,(h-(-s*dx+c*dy)/m.resolution)/h*canvas.height];};
+    ctx.strokeStyle='#175d9c';ctx.lineWidth=2;ctx.beginPath();(m.trail||[]).forEach((p,i)=>{const q=point(p);i?ctx.lineTo(...q):ctx.moveTo(...q);});ctx.stroke();
+    if(m.goal){const [x,y]=point(m.goal);ctx.strokeStyle='#9c3517';ctx.beginPath();ctx.moveTo(x-7,y);ctx.lineTo(x+7,y);ctx.moveTo(x,y-7);ctx.lineTo(x,y+7);ctx.stroke();}
+    if(m.pose){const [x,y]=point(m.pose);ctx.fillStyle='#175d9c';ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();}
+    $('autonomyMapState').textContent=`실시간 SLAM 지도 · 수신 ${Number(m.map_age_s).toFixed(1)}초 전${m.display_downsampled?' · 화면용 축소 표시':''}`;
+  }catch(e){$('autonomyMapState').textContent='지도 조회 실패: '+e.message;}finally{autonomyMapBusy=false;}
+}
+async function autonomyAction(action){
+  if(autonomyBusy)return;autonomyBusy=true;render();
+  try{
+    const body=action==='start'?{task:$('autonomyTask').value,max_radius:Number($('autonomyRadius').value),max_duration:Number($('autonomyMinutes').value)*60,cycles:Number($('autonomyCycles').value),max_distance:50,speed_multiplier:autonomySpeed,mode:$('autonomyMode').value,target_distance:Number($('roundTripDistance').value),initial_scan_rotation:$('initialScanRotation').checked,rotation_clearance_confirmed:$('initialScanRotation').checked}:{};
+    await api('autonomy/'+action,body,10000);await refresh();
+  }catch(e){message(e.message);}finally{autonomyBusy=false;render();}
+}
+document.addEventListener('DOMContentLoaded',()=>{for(const action of ['start','pause','resume','return','stop'])$('autonomy'+action[0].toUpperCase()+action.slice(1)).addEventListener('click',()=>autonomyAction(action));});
 const $ = id => document.getElementById(id);
 let lease = null, seq = 0, direction = 'idle', hold = null;
 let speed = 10 / 30, status = null, offset = 0, pairing = false, stopping = false;
@@ -19,8 +88,9 @@ async function api(path, body, timeout = 1500, keepalive = false) {
   } finally { clearTimeout(timer); }
 }
 function render() {
+  const switchLink=$('controllerSwitch');if(switchLink){switchLink.hidden=!status?.controller_switch_enabled;const u=new URL(location.href);u.port='8091';u.pathname='/';u.search='';u.hash='';switchLink.href=u.href;}
   const mine = !!lease, maintenance = !!status?.updates?.blocked;
-  if(status?.device_name)document.querySelector('.brand strong').textContent=status.device_name;
+  if(status?.device_name)document.querySelector('.brand strong').textContent=status.device_name==='XLeRobot Trolley'?'XLeRobot':status.device_name;
   controls.forEach(b => {
     b.disabled = maintenance || !mine || arming || stopping || navigating;
     const selected = mine && b.dataset.dir === direction;
@@ -28,10 +98,8 @@ function render() {
     b.setAttribute('aria-pressed', String(selected));
   });
   $('arm').disabled = maintenance || mine || !!status?.armed || stopping || preparing || arming || disconnected || document.hidden;
+  if(status?.autonomy?.busy)$('arm').disabled=true;
   $('arm').textContent = arming ? '준비 중…' : mine ? '조종 중' : '조종 시작';
-  $('prepareBox').hidden = !status || status.demo || status.max_linear >= .89;
-  $('prepare').disabled = maintenance || preparing || !!status?.armed || !!status?.motor_ready || !!status?.other_publishers;
-  $('prepare').textContent = preparing ? '고속 설정 준비 중…' : '폰 조종 고속 설정 적용';
   $('badge').textContent = disconnected ? '재연결 중' : status?.demo ? '시뮬레이션' : mine ? '조종 중' : status ? '연결됨' : '접속 대기';
   $('badge').classList.toggle('on', mine && !disconnected);
   $('controlSummary').textContent = `${status?.demo ? '합성 데모 · 실물 연결 없음' : '로컬 로봇'} · ${status && !disconnected ? 'PIN 인증됨' : '연결 확인 필요'} · ${disconnected ? '재연결 중' : mine ? '내 제어권' : status?.armed ? '다른 기기 조종 중' : '조종 중지'} · ${status?.recording?.active ? '기록 중' : '기록 대기'}`;
@@ -49,16 +117,16 @@ function render() {
   $('speedValue').textContent = Math.round(speed * 30) + '배';
   const max = status?.max_linear ?? .9;
   $('speedDetail').textContent = `이동 요청 ${(.03 * Math.round(speed * 30)).toFixed(2)} m/s · 회전 요청 ${(.15 * Math.round(speed * 30)).toFixed(3)} rad/s (${(.15 * Math.round(speed * 30) * 180 / Math.PI).toFixed(1)}°/s)`;
-  $('limitNote').textContent = max < .89 ? `현재 제어 제한 ${max.toFixed(3)} m/s. 아래 설정 적용 버튼으로 속도 설정을 적용하세요.` : '하한 0.03 · 기본 0.30 · 상한 0.90 m/s. 바퀴 출력 제한이 별도로 적용되며 실제 속도는 미측정입니다.';
+  $('limitNote').textContent = max < .89 ? `현재 제어 제한 ${max.toFixed(3)} m/s. 실제 드라이버 상한이 적용됩니다.` : '하한 0.03 · 기본 0.30 · 상한 0.90 m/s. 바퀴 출력 제한이 별도로 적용되며 실제 속도는 미측정입니다.';
   document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('selected', Number(b.dataset.speed) === Math.round(speed * 30)));
   renderCameras();
   const rec=status?.recording;
-  $('recordStart').disabled=maintenance || !lease || recordBusy || !!rec?.active || !!rec?.finishing;
+  $('recordStart').disabled=maintenance || (!lease && !(status?.autonomy?.mine && status?.autonomy?.phase==='running')) || recordBusy || !!rec?.active || !!rec?.finishing;
   $('task').disabled=!!rec?.active || !!rec?.finishing;
   $('recordBadge').textContent=rec?.finishing?'저장 중':rec?.active?'기록 중':'대기';
   $('recordFinish').hidden=!rec?.active || !rec?.mine;
   $('recordFinish').querySelectorAll('button').forEach(b=>b.disabled=recordBusy);
-  $('recordState').textContent=rec?.error || rec?.camera_error || (rec?.active ? `${rec.samples}프레임 저장 · 학습에 쓸 수 있는 프레임 ${rec.valid_samples}개` : '조종 시작 후 기록할 수 있습니다. 기록 종료 버튼은 로봇도 정지시킵니다.');
+  $('recordState').textContent=rec?.error || rec?.camera_error || (rec?.active ? `${rec.samples}프레임 저장 · 학습에 쓸 수 있는 프레임 ${rec.valid_samples}개` : '수동 조종 또는 내 자율주행을 시작한 뒤 학습 데이터를 수집할 수 있습니다. 자동 운행과 기록은 별도로 종료합니다.');
   $('recordDuration').textContent=rec?.active || rec?.finishing ? `기록 시간 ${Math.floor(rec.elapsed_s || 0)}초 · ${rec.fps} Hz 목표` : '요청 명령·출력 제한 후 발행 명령·센서 상태를 구분해 저장합니다.';
   $('recordStorage').textContent=`남은 공간 ${bytes(status?.storage?.free_bytes)} · 시작 시 최소 256 MiB 필요`;
   const slam=rec?.slam;
@@ -74,13 +142,14 @@ function render() {
     for(const ep of episodes.slice(0,5)){
       if(!ep.complete)continue;
       const row=document.createElement('div');row.className='episode-row';
-      const label=document.createElement('span');label.textContent=`${ep.task} · ${names[ep.outcome]||'미분류'} · ${ep.samples}프레임 · 학습 유효 ${ep.valid_samples||0}개`;
+      const label=document.createElement('span');label.textContent=`${ep.control_mode==='autonomous'?'자동 순회 · ':''}${ep.task} · ${names[ep.outcome]||'미분류'} · ${ep.samples}프레임 · 학습 유효 ${ep.valid_samples||0}개`;
       const link=document.createElement('a');link.textContent='다운로드';link.href='/api/record/'+encodeURIComponent(ep.episode_id)+'/download';
       row.append(label,link);$('episodes').append(row);
       if(ep.slam?.enabled){const quality=document.createElement('small');quality.textContent=ep.slam.valid_for_mapping?'SLAM 입력 검사 통과 · 오프라인 지도 생성 가능':'SLAM 불완전 · 센서/TF 확인 필요';row.append(quality);}
     }
   }
 
+  renderAutonomy();
 }
 function clearDirection() { direction = 'idle'; hold = null; render(); }
 function lostLease(reason) {
@@ -165,12 +234,6 @@ controls.forEach(button => {
 });
 $('speed').addEventListener('input',e=>{speed=Number(e.target.value)/30;render();sendCommand(true);});
 document.querySelectorAll('[data-speed]').forEach(b=>b.addEventListener('click',()=>{speed=Number(b.dataset.speed)/30;$('speed').value=b.dataset.speed;render();sendCommand(true);}));
-$('prepare').addEventListener('click',async()=>{
-  preparing=true;render();message();
-  try {await api('prepare',{},18000);message('설정이 적용됐습니다. 조종 시작을 누르세요.');}
-  catch(e){message(e.message);}
-  finally{preparing=false;await refresh();render();}
-});
 $('stop').addEventListener('click',()=>stop());
 $('recordStart').addEventListener('click',async()=>{
   recordBusy=true;message();render();
@@ -180,7 +243,7 @@ $('recordStart').addEventListener('click',async()=>{
 });
 document.querySelectorAll('[data-outcome]').forEach(b=>b.addEventListener('click',async()=>{
   recordBusy=true;message();render();
-  try{await api('record/finish',{outcome:b.dataset.outcome},8000);generation++;lease=null;clearDirection();message('기록을 저장하고 조종을 종료했습니다.');}
+  try{const result=await api('record/finish',{outcome:b.dataset.outcome},15000);if(!result.autonomy_continues){generation++;lease=null;clearDirection();}message(result.autonomy_continues?'학습 데이터를 저장했습니다. 자율주행은 계속됩니다.':'기록을 저장하고 조종을 종료했습니다.');}
   catch(e){message(e.message);}
   finally{recordBusy=false;await refresh();render();}
 }));
@@ -204,7 +267,7 @@ function renderCameras(){
  cameraListSignature=signature;
  const selected=$('cameraSelect').value;
  $('cameraSelect').replaceChildren();
- cameras.forEach(c=>{const option=document.createElement('option');option.value=c.index;option.textContent=(c.role==='front'?'본체':'집게')+(c.connected?'':' · 연결 안 됨');option.disabled=!c.connected;$('cameraSelect').append(option);});
+ cameras.forEach(c=>{const option=document.createElement('option');option.value=c.index;option.textContent=({front:'상단',wrist:'집게',left_wrist:'왼팔 손목',right_wrist:'오른팔 손목'}[c.role]||c.role)+(c.connected?'':' · 연결 안 됨');option.disabled=!c.connected;$('cameraSelect').append(option);});
  if(cameras.some(c=>String(c.index)===selected&&c.connected))$('cameraSelect').value=selected;
  $('cameraSelect').hidden=cameras.length<2;
  $('deviceConfig').textContent=status?.has_arm?'팔 장착 · 카메라':'본체 카메라';
@@ -223,7 +286,7 @@ function bytes(value) {
   return Number.isFinite(value) ? `${(value / 1024**3).toFixed(2)} GiB` : '확인 불가';
 }
 async function showScreen(name) {
-  if (!['drive', 'record', 'system'].includes(name) || navigating || arming || preparing || stopping || recordBusy || name === currentScreen) return;
+  if (!['drive', 'record', 'autonomy', 'system'].includes(name) || navigating || arming || preparing || stopping || recordBusy || name === currentScreen) return;
   navigating = true; render();
   try {
     if (lease) {
@@ -235,7 +298,7 @@ async function showScreen(name) {
       }
     }
     currentScreen = name;
-    for (const screen of ['drive', 'record', 'system']) $('screen-' + screen).hidden = screen !== name;
+    for (const screen of ['drive', 'record', 'autonomy', 'system']) $('screen-' + screen).hidden = screen !== name;
     render();
     if (cameraOn && name !== 'drive') $('camera').removeAttribute('src');
     else if (cameraOn) loadCamera();
@@ -296,3 +359,21 @@ setInterval(() => { if (currentScreen === 'system' && !$('panel').hidden && !doc
 setInterval(sendCommand,100);
 setInterval(()=>{if(!$('panel').hidden&&!document.hidden)refresh();},1000);
 render();refresh();
+
+async function changeAutonomySpeed(value){
+  if(autonomySpeedBusy)return;
+  const selected=Number(value);
+  if(!Number.isInteger(selected)||selected<1||selected>3)return;
+  autonomySpeed=selected;
+  if(!status?.autonomy?.busy){renderAutonomy();return;}
+  autonomySpeedBusy=true;renderAutonomy();
+  try{await api('autonomy/speed',{speed_multiplier:selected},3000);}
+  catch(e){message(e.message);}
+  finally{autonomySpeedBusy=false;await refresh();renderAutonomy();}
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  $('autonomySpeed').addEventListener('input',()=>changeAutonomySpeed($('autonomySpeed').value));
+  document.querySelectorAll('[data-autonomy-speed]').forEach(b=>b.addEventListener('click',()=>changeAutonomySpeed(b.dataset.autonomySpeed)));
+});
+
+document.addEventListener('DOMContentLoaded',()=>{$('autonomyMode').addEventListener('change',renderAutonomy);});

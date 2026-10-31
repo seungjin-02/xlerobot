@@ -11,6 +11,9 @@ def nodes(context):
     params = LaunchConfiguration('params_file').perform(context)
     names = ['map_server','amcl','planner_server','controller_server','smoother_server','behavior_server','bt_navigator']
     packages = ['nav2_map_server','nav2_amcl','nav2_planner','nav2_controller','nav2_smoother','nav2_behaviors','nav2_bt_navigator']
+    mode = LaunchConfiguration('localization_mode').perform(context)
+    if mode not in ('saved_map','slam'): raise ValueError('Unknown localization mode')
+    if mode == 'slam': names,packages = names[2:],packages[2:]
     result = []
     for name,package in zip(names,packages):
         result.append(Node(package=package,executable=name,name=name,output='screen',parameters=[params],
@@ -22,4 +25,5 @@ def nodes(context):
 
 
 def generate_launch_description():
-    return LaunchDescription([DeclareLaunchArgument('params_file'),OpaqueFunction(function=nodes)])
+    return LaunchDescription([DeclareLaunchArgument('params_file'),
+        DeclareLaunchArgument('localization_mode',default_value='saved_map'),OpaqueFunction(function=nodes)])

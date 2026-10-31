@@ -211,6 +211,8 @@ class MapTests(unittest.TestCase):
         plugin=result['controller_server']['ros__parameters']['FollowPath']
         self.assertEqual(plugin['plugin'],'dwb_core::DWBLocalPlanner');self.assertGreater(plugin['max_vel_y'],0.)
         self.assertIn('BaseObstacle',plugin['critics'])
+        progress=result['controller_server']['ros__parameters']['progress_checker']
+        self.assertLess(progress['required_movement_radius'],.03*progress['movement_time_allowance'])
         self.assertEqual(result['local_costmap']['local_costmap']['ros__parameters']['robot_radius'],.25)
         template.pop('map_server')
         self.assertEqual(parameters(template,Path('/tmp/map.yaml'),.25,configuration())['map_server']['ros__parameters']['yaml_filename'],'/tmp/map.yaml')

@@ -25,14 +25,14 @@ class NoCamera:
 
 
 class Room:
-    def __init__(self, node, backend=None):
+    def __init__(self, node, backend=None, wheel_shadows=False):
         from sensor_msgs.msg import LaserScan, Imu, JointState
         from nav_msgs.msg import Odometry
         from tf2_msgs.msg import TFMessage
         from geometry_msgs.msg import TransformStamped, Twist
         from std_msgs.msg import Bool
         from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
-        self.node,self.backend = node,backend
+        self.node,self.backend,self.wheel_shadows = node,backend,wheel_shadows
         self.Scan,self.Odom,self.TF,self.Transform,self.Imu,self.Joint = LaserScan,Odometry,TFMessage,TransformStamped,Imu,JointState
         self.scan = node.create_publisher(LaserScan,'/scan',10)
         self.odom = node.create_publisher(Odometry,'/odom',10)
@@ -69,12 +69,13 @@ class Room:
             dynamic.transform.translation.x=x;dynamic.transform.translation.y=y;dynamic.transform.rotation=odom.pose.pose.orientation
             message=self.TF();message.transforms=[dynamic];self.tf.publish(message)
             static=self.Transform();static.header.stamp=stamp;static.header.frame_id='base_footprint';static.child_frame_id='laser'
-            static.transform.translation.x=.1;static.transform.rotation.w=1.
+            laser_offset=0. if self.wheel_shadows else .1
+            static.transform.translation.x=laser_offset;static.transform.rotation.w=1.
             message=self.TF();message.transforms=[static];self.static.publish(message)
             scan=self.Scan();scan.header.stamp=stamp;scan.header.frame_id='laser'
             scan.angle_min=-math.pi;scan.angle_increment=2*math.pi/360;scan.angle_max=scan.angle_min+359*scan.angle_increment
             scan.scan_time=.05;scan.range_min=.05;scan.range_max=10.
-            origin_x=x+.1*math.cos(yaw);origin_y=y+.1*math.sin(yaw)
+            origin_x=x+laser_offset*math.cos(yaw);origin_y=y+laser_offset*math.sin(yaw)
             ranges=[]
             for index in range(360):
                 angle=yaw+scan.angle_min+index*scan.angle_increment;dx,dy=math.cos(angle),math.sin(angle)
@@ -82,6 +83,12 @@ class Room:
                 if abs(dx)>1e-8: choices.append(((3. if dx>0 else -3.)-origin_x)/dx)
                 if abs(dy)>1e-8: choices.append(((3. if dy>0 else -3.)-origin_y)/dy)
                 ranges.append(float(min(value for value in choices if value>0)))
+            if self.wheel_shadows:
+                for i in range(360):
+                    a=math.degrees(scan.angle_min+i*scan.angle_increment)
+                    # Keep the fixture inside filter boundaries: LaserScan's
+                    # float32 wire angles can round an exact 18-degree edge.
+                    if any(abs((a-c+180)%360-180)<=17 for c in (-60,60,180)):ranges[i]=.13
             scan.ranges=ranges;scan.intensities=[100.]*360;self.scan.publish(scan)
             imu=self.Imu();imu.header.stamp=stamp;imu.header.frame_id='base_footprint';imu.orientation=odom.pose.pose.orientation;self.imu.publish(imu)
             joints=self.Joint();joints.header.stamp=stamp;joints.name=['wheel_7','wheel_8','wheel_9'];joints.position=[0.,0.,0.];self.joints.publish(joints)
